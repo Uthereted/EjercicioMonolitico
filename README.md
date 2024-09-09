@@ -1,93 +1,204 @@
-# Monolithic
+# Monolithic Manufacturing application
+
+* If you want to be able to debug the app,
+or you don't know anything about **Docker** and **Docker Compose**, 
+you can install **PyCharm IDE** and follow **Running Monolithic application using PyCharm IDE**.
+* If you want to use **Docker** and **Docker Compose**,
+you can follow **Running Monolithic application using Docker Compose**.
 
 
+## Running Monolithic application using PyCharm IDE
 
-## Getting started
+* If you have a project opened: ```File > Close project```.
+* If you have GitLab access:
+  * Click ```Get from Version Control``` and put
+*https://gitlab.com/macc_ci_cd/aas/monolithic.git* or *git@gitlab.com:macc_ci_cd/aas/monolithic.git*
+as repository.
+* If you don't have gitlab access:
+  * Unzip the ZIP file and open it using PyCharm.
+* Once the project is loaded, create a virtual environment (**venv**) at ```File > Settings > Project: monolithic > Python Interpreter```.
+* Set ```fastapi_app > monolithic``` as Sources root (right click on folder, ```Marc Directory as > Sorces Root```)
+* Add the packages in ```fastapi_app > monolithic > requirements.txt``` to de **venv**.
+  * in the terminal (usually at the bottom of the IDE) ```cd fastapi_app/monolithic```
+  * Then install dependencies ```pip install -r requirements.txt```
+* Click ```OK``` button.
+* Copy environment variables to needed folder:
+  * Right click on ```dot_env_exam``` file.
+  * Paste it inside ```fastapi_app > monolithic``` and name it as ```.env```.
+* Run or Debug main.py
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+You can continue with **Understanding the repository** and **REST API Method** points in this readme.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Running Monolithic application with docker compose
 
-## Add your files
+* Create aas folder and clone repository from GitLab:
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+```bash
+mkdir aas
+cd aas
+git clone https://gitlab.danz.eus/macc/cloud-computing/advanced-software-architectures/aas/monolithic.git
+cd monolithic
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/macc_ci_cd/aas/monolithic.git
-git branch -M main
-git push -uf origin main
+
+* Copy environment variables to .env file:
+
+```bash
+cp dot_env_example .env
 ```
 
-## Integrate with your tools
+* Launch monolithic application using docker compose:
 
-- [ ] [Set up project integrations](https://gitlab.com/macc_ci_cd/aas/monolithic/-/settings/integrations)
+```bash
+docker compose up -d
+```
 
-## Collaborate with your team
+## Help on docker commands
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+* Launch docker compose:
 
-## Test and Deploy
+```bash
+docker compose -f "file" up
+```
 
-Use the built-in continuous integration in GitLab.
+or (if there is a compose.yml file in the current folder)
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+```bash
+docker compose up
+```
 
-***
+* If you want to run it in the background (daemon) add ```-d```:
 
-# Editing this README
+```bash
+docker compose up -d
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+* View running containers:
 
-## Suggestions for a good README
+```bash
+docker compose ps
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+* Stop one of the containers:
 
-## Name
-Choose a self-explaining name for your project.
+```bash
+docker compose stop <container-name>
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+docker compose stop monolithicapp
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+* Stop docker compose:
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+```bash
+docker compose -f "file" down
+```
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+or (if there is a compose.yml file in the current folder)
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```bash
+docker compose down
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+## Understanding this repository
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Docker related files
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+* **```compose.yml```**: indicates the images/containers the application has,
+which port to use...
+* **```dot_env_example```**: it has to be copied (and renamed to *.env*) to the needed path 
+for the application to know environment variables
+* **```fastapi_app > Dockerfile```**: it has the docker commands to create the image with 
+our FastAPI application and needed Dependencies. I also defines that when the container is run,
+```hypercorn``` server has to be executed.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+### Monolithic (```fastapi_app > monolithic```)
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+* **```main.py```**: the main function that will initiate the FastAPI application.
+* **```requirements.txt```**: The dependencies that are needed to execute the application. 
+The Dockerfile will execute ```pip install -r requirements.txt``` to install them
+when we build the image.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### Application (```fastapi_app > monolithic > app```)
 
-## License
-For open source projects, say how it is licensed.
+* **```dependencies.py```**: Functions to inject dependencies to FastAPI (e.g. DB Session).
+This is very interesting, for example, when you want to use a different database for testing.
+* **```business_logic/async_machine.py```**: This is the coroutine that will simulate the manufacturing
+process. It includes functions to manage pieces and a queue of pieces to manufacture.
+* **```routers/main_router.py```**: contains the REST API endpoint definitions for the application:
+  GET, POST, DELETE... You could separate this in multiple files.
+* **```routers/router_utils.py```**: contains different router utility functions that could be used
+in different routers.
+* **```sql/crud.py```**: this file contains the functions that access the database.
+* **```sql/database.py```**: this file contains the database configuration.
+* **```sql/models.py```**: this file contains the mapping between Python Objects and database 
+tables.
+* **```sql/schemas.py```**: this file contains the schema definitions for endpoint request and
+responses (e.g. defines the json structure for the request/responses of the app).
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## REST API Methods
+
+One of the main advantages of FastAPI is that it creates the API documentation automatically if 
+you do it right. Execute the application and open 
+[http://localhost:8000/docs](http://localhost:8000/docs) or [http://localhost:13000/docs](http://localhost:13000/docs).
+Open that page, so you can see the endpoints of the app. You could test how it works from there.
+
+Nevertheless, we recommend:
+
+* Install an application to test the REST APIs. e.g.:
+
+  * [Postman](https://www.getpostman.com/) (Free, you can program environment variables)
+  * [Insomnia](https://insomnia.rest/) (Free and OpenSource + PRO Version)
+  * [SOAP UI](https://www.soapui.org/) (Free and OpenSource + PRO Version)
+
+* Or using the http file:
+  * PyCharm Professional (example at ```docs/rest.http```).
+  * VSCode (example at ```docs/rest_vscode.http```).
+
+The following methods can be seen at
+```fastapi_app > monolithic > app > routers > main_router.py``` annotations.
+
+If you execute the app in your IDE, the host will be *localhost* and port may 
+vary (8000, 13000...).
+
+## Create an order [POST]
+
+* URL: *http://localhost:13000/order*
+* Body:
+
+```json
+{
+  "description": "New order created from REST API",
+  "number_of_pieces": 5
+}
+```
+
+## View an Order [GET]:
+
+You can get the ID when you create the order.
+* URL: *http://localhost:13000/order/{id}*
+
+## Remove an Order [DELETE]:
+
+You can get the ID when you create the order.
+* URL: *http://localhost:13000/order/{id}*
+
+The order will be deleted and the un-manufactured pieces will be removed from the machine queue.
+All the un-manufactured pieces of the order will appear as *"Cancelled"* and the order_id
+will be *null*.
+
+### View all Orders [GET]:
+
+* URL: *http://localhost:13000/order*
+
+### View Machine Status [GET]:
+
+You can see the queue, the status of the machine and the piece that is being manufactured.
+* URL: *http://localhost:13000/machine/status*
+
+### View a Piece [GET]:
+
+You can get the ID when you create the order.
+* URL: *http://localhost:13000/piece/{id}*
+
+### View all Pieces [GET]:
+
+* URL: *http://localhost:13000/piece*

@@ -1,0 +1,127 @@
+# -*- coding: utf-8 -*-
+"""Main file to start FastAPI application."""
+import logging
+import logging.config
+import os
+import sys
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from app.routers import main_router
+from app.sql import models, database
+
+# Configure logging ################################################################################
+logger = logging.getLogger(__name__)
+
+# App Lifespan
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager."""
+    try:
+        logger.info("Starting up")
+        try:
+            logger.info("Creating database tables")
+            async with database.engine.begin() as conn:
+                await conn.run_sync(models.Base.metadata.create_all)
+
+            from app import dependencies
+            logger.info("Creating machine")
+            await dependencies.get_machine()
+        except Exception as exc:
+            logger.error(f"Could not create tables at startup")
+        yield
+    finally:
+        logger.info("Shutting down database")
+        await database.engine.dispose()
+
+# OpenAPI Documentation ############################################################################
+APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
+logger.info("Running app version %s", APP_VERSION)
+DESCRIPTION = """
+Monolithic manufacturing order application.
+"""
+
+tag_metadata = [
+
+    {
+        "name": "Machine",
+        "description": "Endpoints related to machines",
+    },
+    {
+        "name": "Order",
+        "description": "Endpoints to **CREATE**, **READ**, **UPDATE** or **DELETE** orders.",
+    },
+    {
+        "name": "Piece",
+        "description": "Endpoints **READ** piece information.",
+    },
+
+]
+
+app = FastAPI(
+    redoc_url=None,  # disable redoc documentation.
+    title="FastAPI - Monolithic app",
+    description=DESCRIPTION,
+    version=APP_VERSION,
+    servers=[
+        {"url": "/", "description": "Development"}
+    ],
+    license_info={
+        "name": "MIT License",
+        "url": "https://choosealicense.com/licenses/mit/"
+    },
+    openapi_tags=tag_metadata,
+    lifespan=lifespan
+
+)
+
+app.include_router(main_router.router)
+
+
+
+# @app.on_event("startup")
+# async def startup_event():
+#     """Configuration to be executed when fastapi server starts."""
+#     logger.info("Creating database tables")
+#     async with database.engine.begin() as conn:
+#         await conn.run_sync(models.Base.metadata.create_all)
+#
+#     from app import dependencies
+#     logger.info("Creating machine")
+#     await dependencies.get_machine()
+#
+#
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     """Configuration to be executed when fastapi server stops."""
+#     logger.info("Shutting down database")
+#     await database.engine.dispose()
+
+# Main #############################################################################################
+# If application is run as script, execute uvicorn on port 8000
+if __name__ == "__main__":
+    import asyncio
+    from hypercorn.config import Config
+    from hypercorn.asyncio import serve
+    logging.config.fileConfig("./logging.ini")
+    logger.debug("This is a debug message")
+
+    config = Config()
+    config.bind = ['0.0.0.0:8000']
+    config.access_log_format = '%(R)s %(s)s %(st)s %(D)s %({Header}o)s'
+    mainLog = logger
+
+    asyncio.run(serve(app, config))
+
+
+    # import uvicorn
+    # logger.debug("App run as script")
+    # uvicorn.run(
+    #     app,
+    #     host="0.0.0.0",
+    #     port=8000,
+    #     log_config='logging.yml'
+    # )
+    # logger.debug("App finished as script")

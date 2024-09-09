@@ -1,0 +1,14 @@
+services:
+  monolithicapp:
+    build: fastapi_app
+    ports:
+      - '13000:8000'
+      - '13443:8443'
+    volumes:
+      - './fastapi_app/monolithic:/code'
+      - './db_volume:/volume'
+    environment:
+      PYTHONUNBUFFERED: 1
+      SQLALCHEMY_DATABASE_URL: ${SQLALCHEMY_SQLITE_DATABASE_URI}
+    restart: on-failure
+

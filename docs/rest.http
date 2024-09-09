@@ -1,0 +1,53 @@
+# Requires:
+# * PyCharm: PyCharm Professional
+# Syntax: https://www.jetbrains.com/help/pycharm/http-client-in-product-code-editor.html
+@port = 13000
+@base = http://localhost:{{port}}
+
+# Order ################################################################################################################
+###
+# @name CreateOrder
+POST {{base}}/order
+
+{
+  "description": "New order created from HTTP File",
+  "number_of_pieces": 5
+}
+
+> {%
+ client.global.set("order_id", response.body.id)
+ %}
+
+###
+# @name ViewAllOrders
+GET {{base}}/order
+
+> {%
+ client.global.set("order_id", response.body.pop().id)
+ %}
+
+###
+# @name ViewSingleOrder
+GET {{base}}/order/{{order_id}}
+
+###
+# @name DeleteSingleOrder
+DELETE {{base}}/order/{{order_id}}
+
+# Machine ##############################################################################################################
+###
+# @name MachineStatus
+GET {{base}}/machine/status
+
+# Pieces ###############################################################################################################
+###
+# @name ViewAllPieces
+GET {{base}}/piece
+
+> {%
+ client.global.set("piece_id", response.body.pop().id)
+ %}
+
+###
+# @name ViewSinglePiece
+GET {{base}}/piece/{{piece_id}}

@@ -1,0 +1,43 @@
+# Requires:
+# * humao.rest-client extension (https://marketplace.visualstudio.com/items?itemName=humao.rest-client#request-variables)
+# Syntax: https://learn.microsoft.com/en-us/aspnet/core/test/http-files?view=aspnetcore-8.0&WT.mc_id=DT-MVP-5004452#http-file-syntax
+@port = 13000
+@base = http://localhost:{{port}}
+
+# Order ################################################################################################################
+###
+# @name CreateOrder
+POST {{base}}/order
+
+{
+  "description": "New order created from HTTP File",
+  "number_of_pieces": 5
+}
+
+###
+# @name ViewAllOrders
+GET {{base}}/order
+
+###
+# @name ViewSingleOrder
+@order_id = {{ViewAllOrders.response.body.$[-1:].id}}
+GET {{base}}/order/{{order_id}}
+
+###
+# @name DeleteSingleOrder
+DELETE {{base}}/order/{{order_id}}
+
+# Machine ##############################################################################################################
+###
+# @name MachineStatus
+GET {{base}}/machine/status
+
+# Pieces ###############################################################################################################
+###
+# @name ViewAllPieces
+GET {{base}}/piece
+
+###
+# @name ViewSinglePiece
+@piece_id = {{ViewAllPieces.response.body.$[-1:].id}}
+GET {{base}}/piece/{{piece_id}}
