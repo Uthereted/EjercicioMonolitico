@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 """Main file to start FastAPI application."""
-import logging
 import logging.config
 import os
-import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,11 +11,9 @@ from app.sql import models, database
 # Configure logging ################################################################################
 logger = logging.getLogger(__name__)
 
-# App Lifespan
-
-
+# App Lifespan #####################################################################################
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
     try:
         logger.info("Starting up")
@@ -29,8 +25,8 @@ async def lifespan(app: FastAPI):
             from app import dependencies
             logger.info("Creating machine")
             await dependencies.get_machine()
-        except Exception as exc:
-            logger.error(f"Could not create tables at startup")
+        except:
+            logger.error("Could not create tables at startup", )
         yield
     finally:
         logger.info("Shutting down database")
@@ -80,25 +76,6 @@ app = FastAPI(
 app.include_router(main_router.router)
 
 
-
-# @app.on_event("startup")
-# async def startup_event():
-#     """Configuration to be executed when fastapi server starts."""
-#     logger.info("Creating database tables")
-#     async with database.engine.begin() as conn:
-#         await conn.run_sync(models.Base.metadata.create_all)
-#
-#     from app import dependencies
-#     logger.info("Creating machine")
-#     await dependencies.get_machine()
-#
-#
-# @app.on_event("shutdown")
-# async def shutdown_event():
-#     """Configuration to be executed when fastapi server stops."""
-#     logger.info("Shutting down database")
-#     await database.engine.dispose()
-
 # Main #############################################################################################
 # If application is run as script, execute uvicorn on port 8000
 if __name__ == "__main__":
@@ -114,14 +91,3 @@ if __name__ == "__main__":
     mainLog = logger
 
     asyncio.run(serve(app, config))
-
-
-    # import uvicorn
-    # logger.debug("App run as script")
-    # uvicorn.run(
-    #     app,
-    #     host="0.0.0.0",
-    #     port=8000,
-    #     log_config='logging.yml'
-    # )
-    # logger.debug("App finished as script")
