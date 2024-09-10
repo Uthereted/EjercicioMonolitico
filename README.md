@@ -10,18 +10,14 @@ you can follow **Running Monolithic application using Docker Compose**.
 ## Running Monolithic application using PyCharm IDE
 
 * If you have a project opened: ```File > Close project```.
-* If you have GitLab access:
-  * Click ```Get from Version Control``` and put
-*https://gitlab.com/macc_ci_cd/aas/monolithic.git* or *git@gitlab.com:macc_ci_cd/aas/monolithic.git*
-as repository.
-* If you don't have gitlab access:
-  * Unzip the ZIP file and open it using PyCharm.
+* Click ```Get from Version Control``` and set *https://gitlab.com/macc_ci_cd/aas/monolithic.git*
+  as repository.
 * Once the project is loaded, create a virtual environment (**venv**) at ```File > Settings > Project: monolithic > Python Interpreter```.
-* Set ```fastapi_app > monolithic``` as Sources root (right click on folder, ```Marc Directory as > Sorces Root```)
+* Set ```fastapi_app > monolithic``` as **Sources Root** (right click on folder, ```Marc Directory as > Sorces Root```)
 * Add the packages in ```fastapi_app > monolithic > requirements.txt``` to de **venv**.
-  * in the terminal (usually at the bottom of the IDE) ```cd fastapi_app/monolithic```
-  * Then install dependencies ```pip install -r requirements.txt```
-* Click ```OK``` button.
+  * Open the terminal (usually at the bottom left of the IDE)
+  * Go to monolithic folder: ```cd fastapi_app/monolithic```
+  * Install the dependencies: ```pip install -r requirements.txt```
 * Copy environment variables to needed folder:
   * Right click on ```dot_env_exam``` file.
   * Paste it inside ```fastapi_app > monolithic``` and name it as ```.env```.
@@ -31,12 +27,12 @@ You can continue with **Understanding the repository** and **REST API Method** p
 
 ## Running Monolithic application with docker compose
 
-* Create aas folder and clone repository from GitLab:
+* If you did not do it yet, create aas folder and clone repository from GitLab:
 
 ```bash
 mkdir aas
 cd aas
-git clone https://gitlab.danz.eus/macc/cloud-computing/advanced-software-architectures/aas/monolithic.git
+git clone https://gitlab.com/macc_ci_cd/aas/monolithic.git
 cd monolithic
 ```
 
@@ -49,63 +45,17 @@ cp dot_env_example .env
 * Launch monolithic application using docker compose:
 
 ```bash
-docker compose up -d
-```
-
-## Help on docker commands
-
-* Launch docker compose:
-
-```bash
-docker compose -f "file" up
-```
-
-or (if there is a compose.yml file in the current folder)
-
-```bash
-docker compose up
-```
-
-* If you want to run it in the background (daemon) add ```-d```:
-
-```bash
-docker compose up -d
-```
-
-* View running containers:
-
-```bash
-docker compose ps
-```
-
-* Stop one of the containers:
-
-```bash
-docker compose stop <container-name>
-
-docker compose stop monolithicapp
-```
-
-* Stop docker compose:
-
-```bash
-docker compose -f "file" down
-```
-
-or (if there is a compose.yml file in the current folder)
-
-```bash
-docker compose down
+docker compose up -d --build
 ```
 
 ## Understanding this repository
 
 ### Docker related files
 
-* **```compose.yml```**: indicates the images/containers the application has,
+* **```compose.yml```**: indicates how to create the container(s) the application has,
 which port to use...
 * **```dot_env_example```**: it has to be copied (and renamed to *.env*) to the needed path 
-for the application to know environment variables
+for the application to know environment variables.
 * **```fastapi_app > Dockerfile```**: it has the docker commands to create the image with 
 our FastAPI application and needed Dependencies. I also defines that when the container is run,
 ```hypercorn``` server has to be executed.
@@ -119,9 +69,9 @@ when we build the image.
 
 ### Application (```fastapi_app > monolithic > app```)
 
-* **```dependencies.py```**: Functions to inject dependencies to FastAPI (e.g. DB Session).
+* **```dependencies.py```**: functions to inject dependencies to FastAPI (e.g. DB Session).
 This is very interesting, for example, when you want to use a different database for testing.
-* **```business_logic/async_machine.py```**: This is the coroutine that will simulate the manufacturing
+* **```business_logic/async_machine.py```**: this is the coroutine that will simulate the manufacturing
 process. It includes functions to manage pieces and a queue of pieces to manufacture.
 * **```routers/main_router.py```**: contains the REST API endpoint definitions for the application:
   GET, POST, DELETE... You could separate this in multiple files.
@@ -135,6 +85,12 @@ tables.
 responses (e.g. defines the json structure for the request/responses of the app).
 
 ## REST API Methods
+
+If you execute the app the host will be *localhost*. The port may 
+vary:
+
+* **8000** if executed from the IDE.
+* **13000** if executed using Docker Compose.
 
 One of the main advantages of FastAPI is that it creates the API documentation automatically if 
 you do it right. Execute the application and open 
@@ -156,10 +112,8 @@ Nevertheless, we recommend:
 The following methods can be seen at
 ```fastapi_app > monolithic > app > routers > main_router.py``` annotations.
 
-If you execute the app in your IDE, the host will be *localhost* and port may 
-vary (8000, 13000...).
 
-## Create an order [POST]
+### Create an order [POST]
 
 * URL: *http://localhost:13000/order*
 * Body:
@@ -171,12 +125,12 @@ vary (8000, 13000...).
 }
 ```
 
-## View an Order [GET]:
+### View an Order [GET]:
 
 You can get the ID when you create the order.
 * URL: *http://localhost:13000/order/{id}*
 
-## Remove an Order [DELETE]:
+### Remove an Order [DELETE]:
 
 You can get the ID when you create the order.
 * URL: *http://localhost:13000/order/{id}*
@@ -202,3 +156,61 @@ You can get the ID when you create the order.
 ### View all Pieces [GET]:
 
 * URL: *http://localhost:13000/piece*
+
+
+## Help on docker commands
+
+> Launch docker compose:
+>
+> ```bash
+> docker compose -f "file" up
+> ```
+>
+> or (if there is a compose.yml file in the current folder)
+>
+> ```bash
+> docker compose up
+> ```
+>
+> If you want to run it in the background so you can keep using the terminal, 
+>  run it as a daemon adding ```-d```:
+>
+> ```bash
+> docker compose up -d
+>```
+> 
+> If we make changes to the image but we do not build it, 
+> we may be using an old version without knowing it. 
+> If you want to asure that you are using the latest version, you can **rebuild** the image:
+> 
+> ```bash
+> docker compose up -d --build
+> ```
+> As Docker images are built in layers, the speed of the build process will depend on the changes made.
+> If there are no changes in the Dockerfile, the process will be instantaneous.
+
+> List running containers:
+> 
+> ```bash
+> docker compose ps
+> ```
+
+> Stop one of the containers:
+>
+> ```bash
+> docker compose stop <container-name>
+>
+> docker compose stop monolithicapp
+> ```
+
+> Stop all containers:
+>
+> ```bash
+> docker compose -f "file" down
+> ```
+>
+> or (if there is a compose.yml file in the current folder)
+>
+> ```bash
+> docker compose down
+> ```
