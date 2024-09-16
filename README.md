@@ -23,7 +23,7 @@ you can follow **Running Monolithic application using Docker Compose**.
   * Click on the ```+``` sign and select ```Python```.
   * Check that the interpreter is the local interpreter.
   * Chose module instead of script and write ```hypercorn```.
-  * In parameters write ```app.main:app --log-config ./app/logging.ini --bind 0.0.0.0:8000```
+  * In parameters write ```app.main:app --bind 0.0.0.0:8000```
     * This is the same as we have in ```entrypoint.sh```.
   * In working directory write ```$ProjectFileDir$/fastapi_app```
   * In environment variables write ```PYTHONUNBUFFERED=1;SQLALCHEMY_SQLITE_DATABASE_URI=sqlite+aiosqlite:////volume/monolithic.db```
