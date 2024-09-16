@@ -64,7 +64,7 @@ async def get_piece_list_by_status(db: AsyncSession, status):
     """Get all pieces with a given status from the database."""
     # query = db.query(models.Piece).filter_by(status=status)
     # return query.all()
-    stmt = select(models.Piece).where(models.Piece.status==status)
+    stmt = select(models.Piece).where(models.Piece.status == status)
     # result = await db.execute(stmt)
     # item_list = result.scalars().all()
 

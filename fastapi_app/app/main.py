@@ -6,9 +6,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from app.routers import main_router
-from app.sql import models, database
+from app.sql import models
+from app.sql import database
 
 # Configure logging ################################################################################
+print("Name: ", __name__)
+logging.config.fileConfig(os.path.join(os.path.dirname(__file__), 'logging.ini'))
 logger = logging.getLogger(__name__)
 
 # App Lifespan #####################################################################################
@@ -74,20 +77,3 @@ app = FastAPI(
 )
 
 app.include_router(main_router.router)
-
-
-# Main #############################################################################################
-# If application is run as script, execute uvicorn on port 8000
-if __name__ == "__main__":
-    import asyncio
-    from hypercorn.config import Config
-    from hypercorn.asyncio import serve
-    logging.config.fileConfig("./logging.ini")
-    logger.debug("This is a debug message")
-
-    config = Config()
-    config.bind = ['0.0.0.0:8000']
-    config.access_log_format = '%(R)s %(s)s %(st)s %(D)s %({Header}o)s'
-    mainLog = logger
-
-    asyncio.run(serve(app, config))

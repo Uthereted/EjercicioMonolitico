@@ -5,7 +5,7 @@ services:
       - '13000:8000'
       - '13443:8443'
     volumes:
-      - './fastapi_app/monolithic:/code'
+      - './fastapi_app:/code'
       - './db_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1

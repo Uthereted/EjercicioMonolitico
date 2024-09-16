@@ -13,15 +13,23 @@ you can follow **Running Monolithic application using Docker Compose**.
 * Click ```Get from Version Control``` and set *https://gitlab.com/macc_ci_cd/aas/monolithic.git*
   as repository.
 * Once the project is loaded, create a virtual environment (**venv**) at ```File > Settings > Project: monolithic > Python Interpreter```.
-* Set ```fastapi_app > monolithic``` as **Sources Root** (right click on folder, ```Marc Directory as > Sorces Root```)
-* Add the packages in ```fastapi_app > monolithic > requirements.txt``` to de **venv**.
+* Set ```fastapi_app``` folder as **Sources Root** (right click on folder, ```Marc Directory as > Sorces Root```)
+* Add the packages in ```fastapi_app > requirements.txt``` to de **venv**.
   * Open the terminal (usually at the bottom left of the IDE)
-  * Go to monolithic folder: ```cd fastapi_app/monolithic```
+  * Go to monolithic folder: ```cd fastapi_app```
   * Install the dependencies: ```pip install -r requirements.txt```
-* Copy environment variables to needed folder:
-  * Right click on ```dot_env_exam``` file.
-  * Paste it inside ```fastapi_app > monolithic``` and name it as ```.env```.
-* Run or Debug main.py
+* Configure Run/Debug. We will use **Hypercorn** as server, and we will pass our app class in app.main as our application:
+  * Click over Run/Debug configuration and select ```Edit Configurations...```.
+  * Click on the ```+``` sign and select ```Python```.
+  * Check that the interpreter is the local interpreter.
+  * Chose module instead of script and write ```hypercorn```.
+  * In parameters write ```app.main:app --log-config ./app/logging.ini --bind 0.0.0.0:8000```
+    * This is the same as we have in ```entrypoint.sh```.
+  * In working directory write ```$ProjectFileDir$/fastapi_app```
+  * In environment variables write ```PYTHONUNBUFFERED=1;SQLALCHEMY_SQLITE_DATABASE_URI=sqlite+aiosqlite:////volume/monolithic.db```
+    * This is similar to what we have in ```dot_env_example``` file.
+  * Click on the ```Bug``` icon to run the application on debug mode.
+    * If you have a breakpoint in the code (e.g. line 20 in ```main.py```), the execution will stop there when you start the application.
 
 You can continue with **Understanding the repository** and **REST API Method** points in this readme.
 
@@ -59,15 +67,45 @@ for the application to know environment variables.
 * **```fastapi_app > Dockerfile```**: it has the docker commands to create the image with 
 our FastAPI application and needed Dependencies. I also defines that when the container is run,
 ```hypercorn``` server has to be executed.
+* **```fastapi_app > entrypoint.sh```**: it is the script that will be executed when the container starts.
+It will execute hypercorn with the FastAPI application.
+Hypercorn is a web server that is used to serve the FastAPI application.
 
-### Monolithic (```fastapi_app > monolithic```)
+> FastAPI uses lifespan events for starting and finishing the application in a correct way.
+> In order to do that, hypercorn has to be also correctly closed.
+> That is why entrypoint.sh has a "trap", in order to close hypercorn correctly.
+> When container receives a signal to finish, it is captured and hypercorn is notified to finish. 
+>
+> ```sh
+> ...
+> terminate() {
+>   echo "Termination signal received, shutting down..."
+>   kill -SIGTERM "$HYPERCORN_PID"
+>   wait "$HYPERCORN_PID"
+>   echo "Hypercorn has been terminated"
+> }
+>
+> trap terminate SIGTERM SIGINT
+>
+> hypercorn \
+>   --bind 0.0.0.0:8000 \
+>   app.main:app &
+> 
+> # Capture the PID of the Hypercorn process
+> HYPERCORN_PID=$!
+>
+> # Wait for the Hypercorn process to finish
+> wait "$HYPERCORN_PID"
+> ```
+
+### Monolithic (```fastapi_app```)
 
 * **```main.py```**: the main function that will initiate the FastAPI application.
 * **```requirements.txt```**: The dependencies that are needed to execute the application. 
 The Dockerfile will execute ```pip install -r requirements.txt``` to install them
 when we build the image.
 
-### Application (```fastapi_app > monolithic > app```)
+### Application (```fastapi_app > app```)
 
 * **```dependencies.py```**: functions to inject dependencies to FastAPI (e.g. DB Session).
 This is very interesting, for example, when you want to use a different database for testing.
@@ -110,7 +148,7 @@ Nevertheless, we recommend:
   * VSCode (example at ```docs/rest_vscode.http```).
 
 The following methods can be seen at
-```fastapi_app > monolithic > app > routers > main_router.py``` annotations.
+```fastapi_app > app > routers > main_router.py``` annotations.
 
 
 ### Create an order [POST]
