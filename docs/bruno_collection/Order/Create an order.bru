@@ -21,6 +21,15 @@ vars:post-response {
   orderId: res('id')
 }
 
+assert {
+  res.status: eq 201
+  res.body.number_of_pieces: isNumber
+  res.body.number_of_pieces: gt 0
+  res.body.description: isNotEmpty
+  res.body.id: isNumber
+  res.body.status: isNotEmpty
+}
+
 tests {
   /*
   ** This is a test example.

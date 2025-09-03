@@ -10,6 +10,17 @@ get {
   auth: inherit
 }
 
+assert {
+  res.status: eq 200
+  res.body.description: isNotEmpty
+  res.body.creation_date: isNotEmpty
+  res.body.number_of_pieces: isNumber
+  res.body.status: isNotEmpty
+  res.body.update_date: isNotEmpty
+  res.body.pieces: isArray
+  res.body.pieces.length: gt 0
+}
+
 settings {
   encodeUrl: true
 }

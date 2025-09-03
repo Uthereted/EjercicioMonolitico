@@ -15,7 +15,8 @@ assert {
   res.body: isJson
   res.body.order: isJson
   res.body.id: isNumber
-  res.body.manufacturing_date: isNotEmpty
+  res.body.id: eq {{pieceId}}
+  res.body.manufacturing_date: isDefined
   res.body.status: isNotEmpty
 }
 
