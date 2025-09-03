@@ -21,6 +21,18 @@ vars:post-response {
   orderId: res('id')
 }
 
+tests {
+  /*
+  ** This is a test example.
+  ** But, if test is so simple, you can use Assert tab instead of Tests.
+  */
+  test("should be able to create", function() {
+    const data = res.getBody();
+    expect(res.getStatus()).to.equal(201);
+    expect(data.status).to.eql("Created");
+  });
+}
+
 settings {
   encodeUrl: true
 }

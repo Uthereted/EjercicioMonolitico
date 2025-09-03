@@ -10,6 +10,15 @@ get {
   auth: inherit
 }
 
+assert {
+  res.status: eq 200
+  res.body: isJson
+  res.body.order: isJson
+  res.body.id: isNumber
+  res.body.manufacturing_date: isNotEmpty
+  res.body.status: isNotEmpty
+}
+
 settings {
   encodeUrl: true
 }

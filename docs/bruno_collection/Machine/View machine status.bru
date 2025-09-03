@@ -10,6 +10,12 @@ get {
   auth: inherit
 }
 
+assert {
+  res.body: isJson
+  res.body.queue: isArray
+  res.body.status: isNotEmpty
+}
+
 settings {
   encodeUrl: true
 }
