@@ -139,13 +139,14 @@ Nevertheless, we recommend:
 
 * Install an application to test the REST APIs. e.g.:
 
+  * [Bruno](https://www.usebruno.com/) (Free and OpenSource + PRO Version, Git friendly)
+    * There is a collection of api calls in this repository at ```docs/bruno_collection```.
+    * You can import it in Bruno.
+    * Choose IDE or Docker Compose environments (so correct url is used).
+    * {{orderId}} and {{pieceId}} variables will be created when you create an order or list .
   * [Postman](https://www.getpostman.com/) (Free, you can program environment variables)
   * [Insomnia](https://insomnia.rest/) (Free and OpenSource + PRO Version)
   * [SOAP UI](https://www.soapui.org/) (Free and OpenSource + PRO Version)
-
-* Or using the http file:
-  * PyCharm Professional (example at ```docs/rest.http```).
-  * VSCode (example at ```docs/rest_vscode.http```).
 
 The following methods can be seen at
 ```fastapi_app > app > routers > main_router.py``` annotations.
@@ -186,14 +187,15 @@ will be *null*.
 You can see the queue, the status of the machine and the piece that is being manufactured.
 * URL: *http://localhost:13000/machine/status*
 
+### View all Pieces [GET]:
+
+* URL: *http://localhost:13000/piece*
+
 ### View a Piece [GET]:
 
 You can get the ID when you create the order.
 * URL: *http://localhost:13000/piece/{id}*
 
-### View all Pieces [GET]:
-
-* URL: *http://localhost:13000/piece*
 
 
 ## Help on docker commands

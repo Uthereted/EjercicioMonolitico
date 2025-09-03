@@ -1,0 +1,15 @@
+meta {
+  name: View a piece
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseURL}}/piece/{{pieceId}}
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

@@ -10,9 +10,9 @@ from app.sql import models
 from app.sql import database
 
 # Configure logging ################################################################################
-print("Name: ", __name__)
-logging.config.fileConfig(os.path.join(os.path.dirname(__file__), 'logging.ini'))
+logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
 logger = logging.getLogger(__name__)
+
 
 # App Lifespan #####################################################################################
 @asynccontextmanager
@@ -26,14 +26,18 @@ async def lifespan(__app: FastAPI):
                 await conn.run_sync(models.Base.metadata.create_all)
 
             from app import dependencies
+
             logger.info("Creating machine")
             await dependencies.get_machine()
-        except:
-            logger.error("Could not create tables at startup", )
+        except Exception:
+            logger.error(
+                "Could not create tables at startup",
+            )
         yield
     finally:
         logger.info("Shutting down database")
         await database.engine.dispose()
+
 
 # OpenAPI Documentation ############################################################################
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
@@ -43,7 +47,6 @@ Monolithic manufacturing order application.
 """
 
 tag_metadata = [
-
     {
         "name": "Machine",
         "description": "Endpoints related to machines",
@@ -56,7 +59,6 @@ tag_metadata = [
         "name": "Piece",
         "description": "Endpoints **READ** piece information.",
     },
-
 ]
 
 app = FastAPI(
@@ -64,16 +66,13 @@ app = FastAPI(
     title="FastAPI - Monolithic app",
     description=DESCRIPTION,
     version=APP_VERSION,
-    servers=[
-        {"url": "/", "description": "Development"}
-    ],
+    servers=[{"url": "/", "description": "Development"}],
     license_info={
         "name": "MIT License",
-        "url": "https://choosealicense.com/licenses/mit/"
+        "url": "https://choosealicense.com/licenses/mit/",
     },
     openapi_tags=tag_metadata,
-    lifespan=lifespan
-
+    lifespan=lifespan,
 )
 
 app.include_router(main_router.router)

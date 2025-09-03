@@ -1,0 +1,26 @@
+meta {
+  name: Create an order
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseURL}}/order
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "description": "New order created from REST API",
+    "number_of_pieces": 5
+  }
+}
+
+vars:post-response {
+  orderId: res('id')
+}
+
+settings {
+  encodeUrl: true
+}
