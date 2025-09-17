@@ -5,7 +5,7 @@ services:
       - '13000:8000'
       - '13443:8443'
     volumes:
-      - './fastapi_app:/code'
+      #- './fastapi_app:/home/pyuser/code'
       - './db_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1
