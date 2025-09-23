@@ -1,0 +1,53 @@
+@startuml
+participant "business_logic/async_machine.py" as machine
+queue "Async Queue" as queue
+database "Database" as db
+
+machine -> machine: manufacturing_coroutine()
+loop while not self.__stop_machine
+activate machine
+note left
+  Coroutine that runs until self.__stop_machine is set to True
+  This runs at startup
+end note
+
+machine -> queue: empty()
+note right
+  Checks if the queue is empty
+end note
+
+alt Queue is empty:
+  machine -> machine: status=WAITING
+end
+
+machine -> queue: get()
+note right
+  Gets a piece from the queue
+  if there is none, it awaits
+  until there is one
+end note
+machine->machine: create_piece(piece_id)
+note right
+  Simulates piece manufacturing
+end note
+activate machine
+  machine -> db: Get db session
+  machine -> db: Set the piece that is being manufactured.
+  machine -> db: Update machine and piece status
+  machine -> db: Close db session
+  machine -> machine: "sleep" to simulate manufacturing time
+
+  machine -> db: Get db session
+  machine -> db: update piece status to finished
+  machine -> db: Close db session
+
+  machine->machine: working piece to None
+deactivate machine
+machine->queue: task_done()
+note right
+  Tells the queue that the piece has been processed
+  so it can be removed from the queue
+end note
+deactivate machine
+end loop
+@enduml

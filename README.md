@@ -256,3 +256,13 @@ You can get the ID when you create the order.
 > ```bash
 > docker compose down
 > ```
+
+## UML diagrams
+
+There are some UML diagrams in `docs/diagrams` folder that may help you understand the application.
+
+![Create Order Sequence Diagram](docs/uml/create_order_sequence/create_order_sequence.png)
+
+---
+
+![Piece manufacturing Sequence Diagram](docs/uml/machine_sequence/machine_sequence.png)
