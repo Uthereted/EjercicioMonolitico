@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import ProgrammingError, OperationalError
 from app.sql import crud
 from app.sql.models import Piece, Order
-from app.sql.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 logger.debug("Machine logger set.")
@@ -23,11 +22,15 @@ class Machine:
     working_piece = None
     status = STATUS_WAITING
 
+    def __init__(self, session_factory):
+        # Session factory is injected to reduce coupling/dependencies
+        self._session_factory = session_factory
+
     @classmethod
-    async def create(cls):
+    async def create(cls, session_factory):
         """Machine constructor: loads manufacturing/queued pieces and starts simulation."""
         logger.info("AsyncMachine initialized")
-        self = Machine()
+        self = Machine(session_factory)
         asyncio.create_task(self.manufacturing_coroutine())
         await self.reload_queue_from_database()
         return self
@@ -35,7 +38,7 @@ class Machine:
     async def reload_queue_from_database(self):
         """Reload queue from database, to reload data when the system has been rebooted."""
         # Load the piece that was being manufactured
-        async with SessionLocal() as db:
+        async with self._session_factory() as db:
             manufacturing_piece = await Machine.get_manufacturing_piece(db)
             if manufacturing_piece:
                 await self.add_piece_to_queue(manufacturing_piece)
@@ -85,14 +88,14 @@ class Machine:
     async def create_piece(self, piece_id: int):
         """Simulates piece manufacturing."""
         # Machine and piece status updated during manufacturing
-        async with SessionLocal() as db:
+        async with self._session_factory() as db:
             await self.update_working_piece(piece_id, db)
             await self.working_piece_to_manufacturing(db)  # Update Machine&piece status
             await db.close()
 
         await asyncio.sleep(randint(5, 20))  # Simulates time spent manufacturing
 
-        async with SessionLocal() as db:
+        async with self._session_factory() as db:
             await self.working_piece_to_finished(db)  # Update Machine&Piece status
             await db.close()
 

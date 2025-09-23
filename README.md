@@ -261,6 +261,12 @@ You can get the ID when you create the order.
 
 There are some UML diagrams in `docs/diagrams` folder that may help you understand the application.
 
+---
+
+![Main Architecture](docs/uml/architecture/architecture.png)
+
+---
+
 ![Create Order Sequence Diagram](docs/uml/create_order_sequence/create_order_sequence.png)
 
 ---

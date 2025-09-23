@@ -29,9 +29,6 @@ async def get_machine():
     global MY_MACHINE
     if MY_MACHINE is None:
         from app.business_logic.async_machine import Machine
-        MY_MACHINE = await Machine.create()
+        from app.sql.database import SessionLocal
+        MY_MACHINE = await Machine.create(SessionLocal)
     return MY_MACHINE
-
-
-# asyncio.create_task(get_machine())
-# asyncio.run(init_machine())
