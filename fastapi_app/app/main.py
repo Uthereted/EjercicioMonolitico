@@ -14,7 +14,7 @@ logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini")
 logger = logging.getLogger(__name__)
 
 
-# App Lifespan #####################################################################################
+# App Lifespan hola #####################################################################################
 @asynccontextmanager
 async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
