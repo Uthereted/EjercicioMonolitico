@@ -45,19 +45,6 @@ async def update_order_status(db: AsyncSession, order_id, status):
         await db.refresh(db_order)
     return db_order
 
-
-# Piece functions ##################################################################################
-async def get_piece_list_by_status(db: AsyncSession, status):
-    """Get all pieces with a given status from the database."""
-    # query = db.query(models.Piece).filter_by(status=status)
-    # return query.all()
-    stmt = select(models.Piece).where(models.Piece.status == status)
-    # result = await db.execute(stmt)
-    # item_list = result.scalars().all()
-
-    return await get_list_statement_result(db, stmt)
-
-
 # Generic functions ################################################################################
 # READ
 async def get_list(db: AsyncSession, model):

@@ -45,3 +45,10 @@ class Order(OrderBase):
 class OrderPost(OrderBase):
     """Schema definition to create a new order."""
 
+class OrderStatusUpdate(BaseModel):
+    """Schema used to update an order status."""
+
+    status: str = Field(
+        description="New status for the order",
+        example="Finished"
+    )

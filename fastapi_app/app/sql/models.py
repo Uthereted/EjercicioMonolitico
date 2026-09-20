@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Database models definitions. Table representations as class."""
+from sqlalchemy import Column, DateTime, Integer, String, TEXT
 from sqlalchemy.sql import func
+
 from .database import Base
 
 
