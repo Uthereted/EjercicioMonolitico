@@ -23,7 +23,7 @@ RUN chmod +x /home/pyuser/code/entrypoint.sh
 USER 1000
 
 # Copy the app to the container
-COPY app /home/pyuser/code/app
+COPY delivery/app /home/pyuser/code/app
 
 # Run the application
 ENTRYPOINT ["./entrypoint.sh"]

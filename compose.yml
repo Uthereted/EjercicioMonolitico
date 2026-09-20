@@ -9,6 +9,16 @@ services:
       - './db_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1
-      SQLALCHEMY_DATABASE_URL: ${SQLALCHEMY_SQLITE_DATABASE_URI}
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/monolithic.db
     restart: on-failure
 
+  delivery:
+    build: services/delivery
+    ports:
+      - '13005:8005'
+    volumes:
+      - './delivery_volume:/volume'
+    environment:
+      PYTHONUNBUFFERED: 1
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/delivery.db
+    restart: on-failure
