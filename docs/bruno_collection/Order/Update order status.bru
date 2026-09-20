@@ -5,7 +5,7 @@ meta {
 }
 
 patch {
-  url: {{baseURL}}/order/{{orderId}}/status
+  url: {{baseURL}}/order/1/status
   body: json
   auth: inherit
 }
@@ -24,4 +24,5 @@ assert {
 
 settings {
   encodeUrl: true
+  timeout: 0
 }

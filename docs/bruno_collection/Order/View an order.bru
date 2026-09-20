@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{baseURL}}/order/{{orderId}}
+  url: {{baseURL}}/order/2
   body: none
   auth: inherit
 }
@@ -21,4 +21,5 @@ assert {
 
 settings {
   encodeUrl: true
+  timeout: 0
 }
