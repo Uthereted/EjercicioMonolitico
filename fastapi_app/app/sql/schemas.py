@@ -29,17 +29,23 @@ class OrderBase(BaseModel):
 
 class Order(OrderBase):
     """Order schema definition."""
-    model_config = ConfigDict(from_attributes=True)  # ORM mode ON
+
+    model_config = ConfigDict(from_attributes=True)
+
     id: int = Field(
         description="Primary key/identifier of the order.",
         default=None,
         example=1
     )
+
     status: str = Field(
         description="Current status of the order",
         default="Created",
         example="Finished"
     )
+
+    creation_date: datetime
+    update_date: datetime
 
 
 class OrderPost(OrderBase):
