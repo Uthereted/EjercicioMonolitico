@@ -1,14 +1,18 @@
 services:
-  monolithicapp:
+
+  order-service:
+
     build: fastapi_app
+
     ports:
-      - '13000:8000'
-      - '13443:8443'
+      - "13001:8000"
+
     volumes:
-      #- './fastapi_app:/home/pyuser/code'
-      - './db_volume:/volume'
+      - "./db_volume:/volume"
+
     environment:
       PYTHONUNBUFFERED: 1
-      SQLALCHEMY_DATABASE_URL: ${SQLALCHEMY_SQLITE_DATABASE_URI}
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
+
     restart: on-failure
 

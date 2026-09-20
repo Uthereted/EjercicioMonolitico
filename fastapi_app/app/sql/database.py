@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
 SQLALCHEMY_DATABASE_URL = os.getenv(
     'SQLALCHEMY_DATABASE_URL',
-    "sqlite+aiosqlite:///./monolithic.db"
+    "sqlite+aiosqlite:///./orders.db"
 )
 
 engine = create_async_engine(

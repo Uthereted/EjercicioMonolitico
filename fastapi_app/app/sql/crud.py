@@ -22,26 +22,13 @@ async def create_order_from_schema(db: AsyncSession, order):
     return db_order
 
 
-async def add_piece_to_order(db: AsyncSession, order):
-    """Creates piece and adds it to order."""
-    piece = models.Piece()
-    piece.order = order
-    db.add(piece)
-    await db.commit()
-    await db.refresh(order)
-    return order
-
-
 async def get_order_list(db: AsyncSession):
     """Load all the orders from the database."""
     return await get_list(db, models.Order)
 
 
 async def get_order(db: AsyncSession, order_id):
-    """Load an order from the database."""
-    stmt = select(models.Order).join(models.Order.pieces).where(models.Order.id == order_id)
-    order = await get_element_statement_result(db, stmt)
-    return order
+    return await get_element_by_id(db, models.Order, order_id)
 
 
 async def delete_order(db: AsyncSession, order_id):
@@ -69,38 +56,6 @@ async def get_piece_list_by_status(db: AsyncSession, status):
     # item_list = result.scalars().all()
 
     return await get_list_statement_result(db, stmt)
-
-
-async def update_piece_status(db: AsyncSession, piece_id, status):
-    """Persist new piece status on the database."""
-    db_piece = await get_element_by_id(db, models.Piece, piece_id)
-    if db_piece is not None:
-        db_piece.status = status
-        await db.commit()
-        await db.refresh(db_piece)
-    return db_piece
-
-
-async def update_piece_manufacturing_date_to_now(db: AsyncSession, piece_id):
-    """For a given piece_id, sets piece's manufacturing_date to current datetime."""
-    db_piece = await get_element_by_id(db, models.Piece, piece_id)
-    if db_piece is not None:
-        db_piece.manufacturing_date = datetime.now()
-        await db.commit()
-        await db.refresh(db_piece)
-    return db_piece
-
-
-async def get_piece_list(db: AsyncSession):
-    """Load all the orders from the database."""
-    stmt = select(models.Piece).join(models.Piece.order)
-    pieces = await get_list_statement_result(db, stmt)
-    return pieces
-
-
-async def get_piece(db: AsyncSession, piece_id):
-    """Load a piece from the database."""
-    return await get_element_by_id(db, models.Piece, piece_id)
 
 
 # Generic functions ################################################################################

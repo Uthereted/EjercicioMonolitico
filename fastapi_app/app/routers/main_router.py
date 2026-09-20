@@ -3,28 +3,14 @@
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, status
+from app.dependencies import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.business_logic.async_machine import Machine
-from app.dependencies import get_db, get_machine
 from app.sql import crud
 from ..sql import schemas
 from .router_utils import raise_and_log_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-@router.get(
-    "/",
-    summary="Health check endpoint",
-    response_model=schemas.Message,
-)
-async def health_check():
-    """Endpoint to check if everything started correctly."""
-    logger.debug("GET '/' endpoint called.")
-    return {
-        "detail": "OK"
-    }
 
 
 # Machine ##########################################################################################
@@ -62,21 +48,24 @@ async def machine_status(
 )
 async def create_order(
     order_schema: schemas.OrderPost,
-    db: AsyncSession = Depends(get_db),
-    machine: Machine = Depends(get_machine)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Create single order endpoint."""
     logger.debug("POST '/order' endpoint called.")
+
     try:
-        db_order = await crud.create_order_from_schema(db, order_schema)
+        db_order = await crud.create_order_from_schema(
+            db,
+            order_schema
+        )
 
-        for _ in range(order_schema.number_of_pieces):
-            db_order = await crud.add_piece_to_order(db, db_order)
-        await machine.add_pieces_to_queue(db_order.pieces)
         return db_order
-    except Exception as exc:  # @ToDo: To broad exception
-        raise_and_log_error(logger, status.HTTP_409_CONFLICT, f"Error creating order: {exc}")
 
+    except Exception as exc:
+        raise_and_log_error(
+            logger,
+            status.HTTP_409_CONFLICT,
+            f"Error creating order: {exc}"
+        )
 
 @router.get(
     "/order",
@@ -133,45 +122,24 @@ async def get_single_order(
     },
     tags=["Order"]
 )
+
+@router.delete(
+    "/order/{order_id}",
+    summary="Delete order",
+    tags=["Order"]
+)
 async def remove_order_by_id(
-        order_id: int,
-        db: AsyncSession = Depends(get_db),
-        my_machine: Machine = Depends(get_machine)
+    order_id: int,
+    db: AsyncSession = Depends(get_db)
 ):
-    """Remove order"""
-    logger.debug("DELETE '/order/%i' endpoint called.", order_id)
+
     order = await crud.get_order(db, order_id)
+
     if not order:
-        raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Order {order_id} not found")
-    await my_machine.remove_pieces_from_queue(order.pieces)
+        raise_and_log_error(
+            logger,
+            status.HTTP_404_NOT_FOUND,
+            f"Order {order_id} not found"
+        )
+
     return await crud.delete_order(db, order_id)
-
-
-# Pieces ###########################################################################################
-@router.get(
-    "/piece",
-    response_model=List[schemas.Piece],
-    summary="retrieve piece list",
-    tags=["Piece", "List"]
-)
-async def get_piece_list(
-        db: AsyncSession = Depends(get_db)
-):
-    """Retrieve the list of pieces."""
-    logger.debug("GET '/piece' endpoint called.")
-    return await crud.get_piece_list(db)
-
-
-@router.get(
-    "/piece/{piece_id}",
-    summary="Retrieve single piece by id",
-    response_model=schemas.Piece,
-    tags=['Piece']
-)
-async def get_single_piece(
-        piece_id: int,
-        db: AsyncSession = Depends(get_db)
-):
-    """Retrieve single piece by id"""
-    logger.debug("GET '/piece/%i' endpoint called.", piece_id)
-    return await crud.get_piece(db, piece_id)

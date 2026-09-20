@@ -1,34 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Application dependency injector."""
+
 import logging
 
 logger = logging.getLogger(__name__)
 
-MY_MACHINE = None
 
-
-# Database #########################################################################################
 async def get_db():
-    """Generates database sessions and closes them when finished."""
-    from app.sql.database import SessionLocal  # pylint: disable=import-outside-toplevel
+    from app.sql.database import SessionLocal
+
     logger.debug("Getting database SessionLocal")
+
     db = SessionLocal()
+
     try:
         yield db
         await db.commit()
+
     except:
         await db.rollback()
+        raise
+
     finally:
         await db.close()
-
-
-# Machine #########################################################################################
-async def get_machine():
-    """Returns the machine object (creates it the first time its executed)."""
-    logger.debug("Getting machine")
-    global MY_MACHINE
-    if MY_MACHINE is None:
-        from app.business_logic.async_machine import Machine
-        from app.sql.database import SessionLocal
-        MY_MACHINE = await Machine.create(SessionLocal)
-    return MY_MACHINE
