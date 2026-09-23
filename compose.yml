@@ -13,9 +13,9 @@ services:
     restart: on-failure
 
   delivery:
-    build: services/delivery
+    build: services
     ports:
-      - '13005:8005'
+      - '13004:8000'
     volumes:
       - './delivery_volume:/volume'
     environment:
