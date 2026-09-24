@@ -1,0 +1,21 @@
+meta {
+  name: View machine status
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseURL}}/machine/status
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.body: isJson
+  res.body.queue: isArray
+  res.body.status: isNotEmpty
+}
+
+settings {
+  encodeUrl: true
+}

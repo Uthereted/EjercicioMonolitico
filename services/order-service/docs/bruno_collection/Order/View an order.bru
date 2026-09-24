@@ -1,0 +1,25 @@
+meta {
+  name: View an order
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseURL}}/order/2
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+  res.body.description: isNotEmpty
+  res.body.creation_date: isNotEmpty
+  res.body.number_of_pieces: isNumber
+  res.body.status: isNotEmpty
+  res.body.update_date: isNotEmpty
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
