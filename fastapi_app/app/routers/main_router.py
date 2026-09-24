@@ -4,8 +4,7 @@ import logging
 from typing import List
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.business_logic.async_machine import Machine
-from app.dependencies import get_db, get_machine
+from app.dependencies import get_db
 from app.sql import crud
 from ..sql import schemas
 from .router_utils import raise_and_log_error
