@@ -60,8 +60,8 @@ docker compose up -d --build
 
 ### Docker related files
 
-* **`compose.yml`**: indicates how to create the container(s) the application has,
-which port to use...
+* **`order-service/compose.yml`**: indicates how to create the container (s) the application has,
+  which port to use...
 * **`dot_env_example`**: it has to be copied (and renamed to *.env*) to the needed path 
 for the application to know environment variables.
 * **`fastapi_app > Dockerfile`**: it has the docker commands to create the image with 
@@ -140,7 +140,7 @@ Nevertheless, we recommend:
 * Install an application to test the REST APIs. e.g.:
 
   * [Bruno](https://www.usebruno.com/) (Free and OpenSource + PRO Version, Git friendly)
-    * There is a collection of api calls in this repository at `docs/bruno_collection`.
+    * There is a collection of api calls in this repository at `order-service/docs`.
     * You can import it in Bruno.
     * Choose IDE or Docker Compose environments (so correct url is used).
     * {{orderId}} and {{pieceId}} are request variables that will be created when creating or listing elements.
@@ -259,16 +259,16 @@ You can get the ID when you create the order.
 
 ## UML diagrams
 
-There are some UML diagrams in `docs/diagrams` folder that may help you understand the application.
+There are some UML diagrams in `order-service/docs` folder that may help you understand the application.
 
 ---
 
-![Main Architecture](docs/uml/architecture/architecture.png)
+![Main Architecture](order-service/docs/uml/architecture/architecture.png)
 
 ---
 
-![Create Order Sequence Diagram](docs/uml/create_order_sequence/create_order_sequence.png)
+![Create Order Sequence Diagram](order-service/docs/uml/create_order_sequence/create_order_sequence.png)
 
 ---
 
-![Piece manufacturing Sequence Diagram](docs/uml/machine_sequence/machine_sequence.png)
+![Piece manufacturing Sequence Diagram](order-service/docs/uml/machine_sequence/machine_sequence.png)
