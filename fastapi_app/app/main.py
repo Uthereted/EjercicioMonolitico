@@ -41,7 +41,7 @@ async def lifespan(__app: FastAPI):
 
 # OpenAPI Documentation ############################################################################
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
-logger.info("Running app version %s", APP_VERSION)
+logger.info("Running delivery version %s", APP_VERSION)
 DESCRIPTION = """
 Monolithic manufacturing order application.
 """
@@ -63,7 +63,7 @@ tag_metadata = [
 
 app = FastAPI(
     redoc_url=None,  # disable redoc documentation.
-    title="FastAPI - Monolithic app",
+    title="FastAPI - Monolithic delivery",
     description=DESCRIPTION,
     version=APP_VERSION,
     servers=[{"url": "/", "description": "Development"}],
