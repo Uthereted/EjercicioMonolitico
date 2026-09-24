@@ -5,11 +5,10 @@ services:
       - '13000:8000'
       - '13443:8443'
     volumes:
-      #- './fastapi_app:/home/pyuser/code'
       - './db_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1
-      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/monolithic.db
+      SQLALCHEMY_DATABASE_URL: ${MONOLITHIC_DATABASE_URL}
     restart: on-failure
 
   delivery:
@@ -20,5 +19,5 @@ services:
       - './delivery_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1
-      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/delivery.db
+      SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
     restart: on-failure

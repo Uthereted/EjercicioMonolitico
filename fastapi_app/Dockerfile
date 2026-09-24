@@ -22,7 +22,7 @@ RUN chmod +x /home/pyuser/code/entrypoint.sh
 # Switch user so container is run as non-root user
 USER 1000
 
-# Copy the app to the container
+# Copy the delivery to the container
 COPY app /home/pyuser/code/app
 
 # Run the application
