@@ -35,7 +35,7 @@ class Machine:
         await self.reload_queue_from_database()
         return self
 
-   # async def reload_queue_from_database(self):
+    async def reload_queue_from_database(self):
         """Reload queue from database, to reload data when the system has been rebooted."""
         # Load the piece that was being manufactured
         async with self._session_factory() as db:

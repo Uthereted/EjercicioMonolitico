@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+hypercorn>=0.16
+sqlalchemy>=2.0
+aiosqlite>=0.20
+pydantic>=2.0
