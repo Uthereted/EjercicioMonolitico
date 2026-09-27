@@ -11,6 +11,17 @@ services:
       SQLALCHEMY_DATABASE_URL: ${MONOLITHIC_DATABASE_URL}
     restart: on-failure
 
+  order-service:
+    build: services/order-service/fastapi_app
+    ports:
+        - "13001:8000"
+    volumes:
+        - "./services/order-service/db_volume:/volume"
+    environment:
+        PYTHONUNBUFFERED: 1
+        SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
+    restart: on-failure
+
   delivery:
     build: services/delivery/delivery_app
     ports:
