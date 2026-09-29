@@ -1,0 +1,16 @@
+meta {
+  name: Get Orders Gateway
+  type: http
+  seq: 7
+}
+
+get {
+  url: http://localhost:8080/api/order/order
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}
