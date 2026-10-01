@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "[MACC] Order Service",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

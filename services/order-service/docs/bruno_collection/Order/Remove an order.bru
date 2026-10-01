@@ -1,0 +1,21 @@
+meta {
+  name: Remove an order
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseURL}}/order/2
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{orderId}}
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

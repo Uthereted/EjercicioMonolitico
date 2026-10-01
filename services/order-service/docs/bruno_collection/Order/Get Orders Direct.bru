@@ -1,0 +1,16 @@
+meta {
+  name: Get Orders Direct
+  type: http
+  seq: 6
+}
+
+get {
+  url: http://localhost:13001/order
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  forwardAuthorizationHeader: false
+}

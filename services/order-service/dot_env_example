@@ -1,0 +1,3 @@
+COMPOSE_PROJECT_NAME=monolithic
+
+SQLALCHEMY_SQLITE_DATABASE_URI=sqlite+aiosqlite:////volume/monolithic.db

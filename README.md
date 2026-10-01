@@ -89,7 +89,7 @@ Hypercorn is a web server that is used to serve the FastAPI application.
 >
 > hypercorn \
 >   --bind 0.0.0.0:8000 \
->   app.main:app &
+>   delivery.main:delivery &
 > 
 > # Capture the PID of the Hypercorn process
 > HYPERCORN_PID=$!

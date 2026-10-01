@@ -1,0 +1,28 @@
+meta {
+  name: Update order status
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseURL}}/order/1/status
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "status": "Finished"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isNumber
+  res.body.status: eq Finished
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,87 @@
+@startuml
+
+frame "User Interface" {
+  [UI/Bruno] as ui
+  note bottom of ui
+    In a real case scenario
+    this could be a front-end app
+    for us it will be Bruno/Postman/Insomnia
+  end note
+}
+
+node "Monolithic application" {
+  [main.py] as main
+  note right of main
+    This will initializate the app
+    and the dependencies
+  end note
+  
+  [routers/main_router.py] as main_router
+  note left of main_router
+    This will contain the REST endpoints
+  end note
+
+  [routers/router_utils.py] as router_utils
+
+  [dependencies.py] as dependencies
+  note bottom of dependencies
+    Manages dependencies so they can be injected
+    reducing the coupling
+  end note
+
+  [sql/schemas.py] as schemas
+  note bottom of schemas
+    Maps input/output json schemas with database models
+  end note
+
+  [business_logic/async_machine.py] as machine
+  note top of machine
+    This will simulate the
+    manufacturing of the pieces
+  end note
+
+  [sql/crud.py] as crud
+
+  queue "Async Queue" as queue
+  note bottom of queue
+    Will store the pieces
+    to be manufactured
+  end note
+
+
+  [sql/models.py] as models
+  note bottom of models
+    Maps database tables with Python objects (models)
+  end note
+
+  [sql/database.py] as database
+  note bottom of database
+    Stores database configuration
+  end note
+}
+
+frame "Database" {
+  database "SQLite Database" as db
+  note bottom of db
+    It could be easily changed to
+    Postgres, MariaDB, MySQL...
+    thanks to SQLAlchemy
+  end note
+}
+
+ui --> main_router
+main --> main_router
+main --> dependencies
+main_router --> dependencies
+dependencies --> machine
+main_router --> router_utils
+main_router --> schemas
+main_router --> crud
+crud --> db
+crud --> models
+crud --> schemas
+machine --> queue
+machine --> crud
+machine --> models
+dependencies --> database
+@enduml

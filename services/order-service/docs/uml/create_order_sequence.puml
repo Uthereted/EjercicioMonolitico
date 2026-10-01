@@ -1,0 +1,78 @@
+@startuml
+actor User as user
+participant "UI/Bruno" as ui
+participant "routers/main_router.py" as main_router
+participant "sql/crud.py" as crud
+database "Database" as db
+participant "buisness_logic/machine.py" as machine
+queue "Async Queue" as queue
+
+user -> ui: Fill request
+note right
+  In bruno, it fills the request
+  and writes the order body in json
+  and submits it
+end note
+ui -> main_router: POST /orders
+note right
+  `async def create_order()`
+  receives the request
+  thanks to `@router.post("/order",...)`
+  and gets the order schema thanks to
+  `order_schema: schemas.OrderPost`
+end note
+
+activate main_router
+
+main_router -> crud: create_order_from_schema(order_schema)
+activate crud
+crud -> crud: Create order model (db_order) from schema (order)
+crud -> db: db.add(db_order) 
+note right
+  to prepare the insert
+end note
+crud -> db: db.commit() 
+note right
+  to execute the insert
+end note
+crud -> db: db.refresh(db_order) 
+note right
+  to get the newly generated id
+end note
+crud -> main_router: return db_order
+deactivate crud
+
+loop for each piece
+    main_router -> crud: add_piece_to_order(db, db_order)
+    activate crud
+    crud -> crud: Create piece model (piece) and link to order
+    crud -> db: db.add(piece) 
+    note right
+      to prepare the insert
+    end note
+    crud -> db: db.commit() 
+    note right
+      to execute the insert
+    end note
+    crud -> db: db.refresh(order)
+    note right
+      to update the order with the added piece
+    end note
+    crud -> main_router: return db_order with new piece added
+    deactivate crud
+end
+main_router -> machine: add_pieces_to_queue(db_order.pieces)
+activate machine
+loop for each piece
+    machine -> queue: add pieces to queue
+end
+deactivate machine
+main_router --> ui: return db_order
+note right
+  db_order will be automatically 
+  transformed into JSON thanks to
+  `response_model=schemas.Order`
+  and returns 201 status code
+end note
+deactivate main_router
+@enduml

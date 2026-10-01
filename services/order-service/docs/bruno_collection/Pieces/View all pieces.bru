@@ -1,0 +1,24 @@
+meta {
+  name: View all pieces
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseURL}}/piece
+  body: none
+  auth: inherit
+}
+
+vars:post-response {
+  pieceId: res('[0].id')
+}
+
+assert {
+  res.status: eq 200
+  res.body: isArray
+}
+
+settings {
+  encodeUrl: true
+}

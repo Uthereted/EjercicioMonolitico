@@ -5,10 +5,46 @@ services:
       - '13000:8000'
       - '13443:8443'
     volumes:
-      #- './fastapi_app:/home/pyuser/code'
       - './db_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1
-      SQLALCHEMY_DATABASE_URL: ${SQLALCHEMY_SQLITE_DATABASE_URI}
+      SQLALCHEMY_DATABASE_URL: ${MONOLITHIC_DATABASE_URL}
     restart: on-failure
 
+  order-service:
+    build: services/order-service/fastapi_app
+    ports:
+        - "13001:8000"
+    volumes:
+        - "./services/order-service/db_volume:/volume"
+    environment:
+        PYTHONUNBUFFERED: 1
+        SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
+    restart: on-failure
+
+  delivery:
+    build: services/delivery/delivery_app
+    ports:
+      - '13004:8000'
+    volumes:
+      - './delivery_volume:/volume'
+    environment:
+      PYTHONUNBUFFERED: 1
+      SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
+    restart: on-failure
+
+
+  haproxy:
+    image: haproxy:latest
+    ports:
+      - "8080:8080"
+      - "8404:8404"
+    volumes:
+      - "./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"
+    environment:
+      HAPROXY_PORT: 8080
+      HAPROXY_STATS_PORT: 8404
+    depends_on:
+      - order-service
+      - delivery
+    restart: on-failure

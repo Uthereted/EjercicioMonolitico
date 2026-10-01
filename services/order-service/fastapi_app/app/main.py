@@ -14,7 +14,7 @@ logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini")
 logger = logging.getLogger(__name__)
 
 
-# App Lifespan hola #####################################################################################
+# App Lifespan Test#####################################################################################
 @asynccontextmanager
 async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
@@ -25,10 +25,6 @@ async def lifespan(__app: FastAPI):
             async with database.engine.begin() as conn:
                 await conn.run_sync(models.Base.metadata.create_all)
 
-            from app import dependencies
-
-            logger.info("Creating machine")
-            await dependencies.get_machine()
         except Exception:
             logger.error(
                 "Could not create tables at startup",
@@ -41,29 +37,21 @@ async def lifespan(__app: FastAPI):
 
 # OpenAPI Documentation ############################################################################
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
-logger.info("Running delivery version %s", APP_VERSION)
+logger.info("Running app version %s", APP_VERSION)
 DESCRIPTION = """
-Monolithic manufacturing order application.
+Order microservice.
 """
 
 tag_metadata = [
     {
-        "name": "Machine",
-        "description": "Endpoints related to machines",
-    },
-    {
         "name": "Order",
         "description": "Endpoints to **CREATE**, **READ**, **UPDATE** or **DELETE** orders.",
-    },
-    {
-        "name": "Piece",
-        "description": "Endpoints **READ** piece information.",
-    },
+    }
 ]
 
 app = FastAPI(
     redoc_url=None,  # disable redoc documentation.
-    title="FastAPI - Monolithic delivery",
+    title="Order Service",
     description=DESCRIPTION,
     version=APP_VERSION,
     servers=[{"url": "/", "description": "Development"}],
