@@ -9,7 +9,6 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${MONOLITHIC_DATABASE_URL}
-      MACHINE_SERVICE_URL: "http://machineservice:8000"
     restart: on-failure
 
   order-service:
@@ -34,6 +33,13 @@ services:
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
     restart: on-failure
 
+  machineservice:
+    build: services/machine # <-- Ruta corregida hacia la subcarpeta
+    ports:
+      - '13002:8000'
+    environment:
+      PYTHONUNBUFFERED: 1
+    restart: on-failure
 
   haproxy:
     image: haproxy:latest
@@ -48,14 +54,4 @@ services:
     depends_on:
       - order-service
       - delivery
-    restart: on-failure
-  machineservice:
-    build: services/machine # <-- Ruta corregida hacia la subcarpeta
-    ports:
-      - '13001:8000'
-    environment:
-      PYTHONUNBUFFERED: 1
-      ORDERS_SERVICE_URL: "http://monolithicapp:8000"
-    depends_on:
-      - monolithicapp
     restart: on-failure
