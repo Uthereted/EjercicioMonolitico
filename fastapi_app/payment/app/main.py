@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from app.routers import main_router
+from app.routers import payment_router
 from app.sql import models
 from app.sql import database
 
@@ -24,15 +24,8 @@ async def lifespan(__app: FastAPI):
             logger.info("Creating database tables")
             async with database.engine.begin() as conn:
                 await conn.run_sync(models.Base.metadata.create_all)
-
-            from app import dependencies
-
-            logger.info("Creating machine")
-            await dependencies.get_machine()
         except Exception:
-            logger.error(
-                "Could not create tables at startup",
-            )
+            logger.error("Could not create tables at startup")
         yield
     finally:
         logger.info("Shutting down database")
@@ -40,30 +33,24 @@ async def lifespan(__app: FastAPI):
 
 
 # OpenAPI Documentation ############################################################################
-APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
+APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
 logger.info("Running app version %s", APP_VERSION)
 DESCRIPTION = """
-Monolithic manufacturing order application.
+Payment microservice. Manages client account balances and transactions
+(deposits and order charges).
 """
 
 tag_metadata = [
     {
-        "name": "Machine",
-        "description": "Endpoints related to machines",
-    },
-    {
-        "name": "Order",
-        "description": "Endpoints to **CREATE**, **READ**, **UPDATE** or **DELETE** orders.",
-    },
-    {
-        "name": "Piece",
-        "description": "Endpoints **READ** piece information.",
+        "name": "Payment",
+        "description": "Endpoints to deposit funds, charge orders and check balance.",
     },
 ]
 
 app = FastAPI(
-    redoc_url=None,  # disable redoc documentation.
-    title="FastAPI - Monolithic app",
+    redoc_url=None,
+    title="FastAPI - Payment Service",
+    docs_url="/payment",
     description=DESCRIPTION,
     version=APP_VERSION,
     servers=[{"url": "/", "description": "Development"}],
@@ -75,4 +62,4 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.include_router(main_router.router)
+app.include_router(payment_router.router)
