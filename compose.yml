@@ -46,4 +46,5 @@ services:
       HAPROXY_STATS_PORT: 8404
     depends_on:
       - order-service
+      - delivery
     restart: on-failure
