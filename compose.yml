@@ -41,6 +41,18 @@ services:
       PYTHONUNBUFFERED: 1
     restart: on-failure
 
+  client_service:
+    build: services/client
+    container_name: client_service
+    ports:
+      - '13005:8000'
+    volumes:
+      - './db_volume:/volume'
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:////volume/client.db
+    restart: on-failure
+
   haproxy:
     image: haproxy:latest
     ports:
