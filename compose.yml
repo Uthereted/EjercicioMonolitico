@@ -42,7 +42,7 @@ services:
     restart: on-failure
 
   client_service:
-    build: services/client
+    build: services/client/client
     container_name: client_service
     ports:
       - '13005:8000'
