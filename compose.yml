@@ -53,6 +53,20 @@ services:
       - SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:////volume/client.db
     restart: on-failure
 
+  paymentservice:
+    build:
+      context: fastapi_app
+      dockerfile: Dockerfile
+    ports:
+      - '13006:8000'
+    volumes:
+      - './payment_db_volume:/volume'
+    environment:
+      PYTHONUNBUFFERED: 1
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/payment.db
+      CLIENT_SERVICE_URL: http://clientservice:8000
+    restart: on-failure
+
   haproxy:
     image: haproxy:latest
     ports:
