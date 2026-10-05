@@ -1,6 +1,6 @@
 services:
   monolithicapp:
-    build: fastapi_app
+    build: client
     ports:
       - '13000:8000'
       - '13443:8443'

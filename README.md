@@ -13,7 +13,7 @@ you can follow **Running Monolithic application using Docker Compose**.
 * Click `Get from Version Control` and set *https://gitlab.com/macc_ci_cd/aas/monolithic.git*
   as repository.
 * Once the project is loaded, create a virtual environment (**venv**) at `File > Settings > Project: monolithic > Python Interpreter`.
-* Set `fastapi_app` folder as **Sources Root** (right click on folder, `Marc Directory as > Sorces Root`)
+* Set `client` folder as **Sources Root** (right click on folder, `Marc Directory as > Sorces Root`)
 * Add the packages in `fastapi_app > requirements.txt` to de **venv**.
   * Open the terminal (usually at the bottom left of the IDE)
   * Go to monolithic folder: `cd fastapi_app`
@@ -98,7 +98,7 @@ Hypercorn is a web server that is used to serve the FastAPI application.
 > wait "$HYPERCORN_PID"
 > ```
 
-### Monolithic (`fastapi_app`)
+### Monolithic (`client`)
 
 * **`main.py`**: the main function that will initiate the FastAPI application.
 * **`requirements.txt`**: The dependencies that are needed to execute the application. 
