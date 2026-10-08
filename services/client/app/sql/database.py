@@ -1,12 +1,10 @@
-# -*- coding: utf-8 -*-
-"""Database session configuration."""
 import os
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
 SQLALCHEMY_DATABASE_URL = os.getenv(
     'SQLALCHEMY_DATABASE_URL',
-    "sqlite+aiosqlite:///./monolithic.db"
+    "sqlite+aiosqlite:///./client.db"
 )
 
 engine = create_async_engine(

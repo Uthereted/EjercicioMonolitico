@@ -1,8 +1,10 @@
+name: order-service
+
 services:
 
   order-service:
 
-    build: fastapi_app
+    build: .
 
     ports:
       - "13001:8000"

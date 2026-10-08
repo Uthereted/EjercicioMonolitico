@@ -1,4 +1,3 @@
-COMPOSE_PROJECT_NAME=monolithic
+COMPOSE_PROJECT_NAME=manufacturing-microservices
 
-MONOLITHIC_DATABASE_URL=sqlite+aiosqlite:////volume/monolithic.db
 DELIVERY_DATABASE_URL=sqlite+aiosqlite:////volume/delivery.db

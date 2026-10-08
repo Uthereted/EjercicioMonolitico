@@ -1,78 +1,21 @@
-# -*- coding: utf-8 -*-
-"""Main file to start FastAPI application."""
-import logging.config
-import os
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
-from app.routers import main_router
-from app.sql import models
-from app.sql import database
+from app.routers import clients_router
+from app.sql import database, models
 
-# Configure logging ################################################################################
-logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
-logger = logging.getLogger(__name__)
-
-
-# App Lifespan #####################################################################################
 @asynccontextmanager
-async def lifespan(__app: FastAPI):
-    """Lifespan context manager."""
-    try:
-        logger.info("Starting up")
-        try:
-            logger.info("Creating database tables")
-            async with database.engine.begin() as conn:
-                await conn.run_sync(models.Base.metadata.create_all)
+async def lifespan(app: FastAPI):
+    async with database.engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.create_all)
+    yield
+    await database.engine.dispose()
 
-            from app import dependencies
-
-            logger.info("Creating machine")
-            await dependencies.get_machine()
-        except Exception:
-            logger.error(
-                "Could not create tables at startup",
-            )
-        yield
-    finally:
-        logger.info("Shutting down database")
-        await database.engine.dispose()
-
-
-# OpenAPI Documentation ############################################################################
-APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
-logger.info("Running app version %s", APP_VERSION)
-DESCRIPTION = """
-Monolithic manufacturing order application.
-"""
-
-tag_metadata = [
-    {
-        "name": "Machine",
-        "description": "Endpoints related to machines",
-    },
-    {
-        "name": "Order",
-        "description": "Endpoints to **CREATE**, **READ**, **UPDATE** or **DELETE** orders.",
-    },
-    {
-        "name": "Piece",
-        "description": "Endpoints **READ** piece information.",
-    },
-]
-
+# Configuración personalizada de la ruta de Swagger UI
 app = FastAPI(
-    redoc_url=None,  # disable redoc documentation.
-    title="FastAPI - Monolithic app",
-    description=DESCRIPTION,
-    version=APP_VERSION,
-    servers=[{"url": "/", "description": "Development"}],
-    license_info={
-        "name": "MIT License",
-        "url": "https://choosealicense.com/licenses/mit/",
-    },
-    openapi_tags=tag_metadata,
-    lifespan=lifespan,
+    title="Client Service",
+    docs_url="/client",
+    redoc_url=None,
+    lifespan=lifespan
 )
 
-app.include_router(main_router.router)
+app.include_router(clients_router.router)
