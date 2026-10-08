@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Database models definitions. Table representations as class."""
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -55,6 +55,10 @@ class Transaction(BaseModel):
     TYPE_CHARGE = "Charge"
 
     __tablename__ = "transaction"
+    __table_args__ = (
+        Index("uq_charge_order", "order_id", unique=True,
+              sqlite_where=text("type = 'Charge'")),
+    )
     id = Column(Integer, primary_key=True)
     account_id = Column(Integer, ForeignKey('account.id', ondelete='cascade'), nullable=False)
     amount = Column(Integer, nullable=False)

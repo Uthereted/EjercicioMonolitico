@@ -7,3 +7,4 @@ SQLAlchemy[asyncio]~=2.0
 aiosqlite~=0.20
 coloredlogs~=15.0
 PyYAML~=6.0
+httpx~=0.28

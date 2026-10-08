@@ -15,16 +15,9 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
-      DELIVERY_SERVICE_URL: http://delivery:8000
-
-      # ============================================================
-      # FUTURE MICROSERVICE CONNECTIONS
-      # ============================================================
-      #
-      # Uncomment when all services are included in Docker Compose:
-      #
-      # PAYMENT_SERVICE_URL: http://payment-service:8000
-      # MACHINE_SERVICE_URL: http://machine-service:8000
-      # CLIENT_SERVICE_URL: http://client-service:8000
+      CLIENT_SERVICE_URL: ${CLIENT_SERVICE_URL:-http://host.docker.internal:13005}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://host.docker.internal:13006}
+      MACHINE_SERVICE_URL: ${MACHINE_SERVICE_URL:-http://host.docker.internal:13002}
+      DELIVERY_SERVICE_URL: ${DELIVERY_SERVICE_URL:-http://host.docker.internal:13004}
 
     restart: on-failure

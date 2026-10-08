@@ -13,7 +13,9 @@ post {
 body:json {
   {
     "description": "New order created from REST API",
-    "number_of_pieces": 5
+    "number_of_pieces": 5,
+    "client_id": {{clientId}},
+    "address": "Calle Mayor 10"
   }
 }
 
@@ -38,7 +40,8 @@ tests {
   test("should be able to create", function() {
     const data = res.getBody();
     expect(res.getStatus()).to.equal(201);
-    expect(data.status).to.eql("Created");
+    expect(data.payment_completed).to.eql(true);
+    expect(data.total_price).to.eql(data.number_of_pieces * 10);
   });
 }
 

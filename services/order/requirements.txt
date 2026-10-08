@@ -9,3 +9,4 @@ coloredlogs~=15.0
 PyYAML~=6.0
 
 greenlet
+httpx~=0.28

@@ -30,7 +30,7 @@ async def _ensure_client_exists(client_id: int):
     """Validates the client exists in the Client service, raising HTTP errors otherwise."""
     try:
         exists = await client_exists(client_id)
-    except httpx.RequestError:
+    except (httpx.RequestError, httpx.HTTPStatusError):
         raise_and_log_error(
             logger,
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -88,7 +88,7 @@ async def charge(
         return await crud.charge(
             db, client_id, charge_schema.amount, charge_schema.order_id
         )
-    except crud.InsufficientFundsError as exc:
+    except (crud.InsufficientFundsError, crud.PaymentConflictError) as exc:
         raise_and_log_error(logger, status.HTTP_409_CONFLICT, str(exc))
 
 

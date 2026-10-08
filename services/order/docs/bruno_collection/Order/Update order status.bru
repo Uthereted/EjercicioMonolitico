@@ -5,7 +5,7 @@ meta {
 }
 
 patch {
-  url: {{baseURL}}/order/1/status
+  url: {{baseURL}}/order/{{orderId}}/status
   body: json
   auth: inherit
 }

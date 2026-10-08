@@ -20,12 +20,10 @@ async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
     try:
         logger.info("Starting up")
-        try:
-            logger.info("Creating database tables")
-            async with database.engine.begin() as conn:
-                await conn.run_sync(models.Base.metadata.create_all)
-        except Exception:
-            logger.error("Could not create tables at startup")
+        async with database.engine.begin() as conn:
+            await conn.run_sync(models.Base.metadata.create_all)
+            for index in models.Transaction.__table__.indexes:
+                await conn.run_sync(lambda connection, index=index: index.create(connection, checkfirst=True))
         yield
     finally:
         logger.info("Shutting down database")

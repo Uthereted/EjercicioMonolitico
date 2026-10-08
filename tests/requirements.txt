@@ -1,0 +1,6 @@
+-r ../services/client/requirements.txt
+-r ../services/order/requirements.txt
+-r ../services/machine/requirements.txt
+-r ../services/delivery/requirements.txt
+-r ../services/payment/requirements.txt
+pytest>=8,<10

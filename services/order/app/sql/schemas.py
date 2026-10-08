@@ -1,60 +1,50 @@
-# -*- coding: utf-8 -*-
-"""Classes for Request/Response schema definitions."""
-# pylint: disable=too-few-public-methods
-from typing import List, Optional
+"""REST contracts for orders and manufacturing callbacks."""
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict  # pylint: disable=no-name-in-module
+from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Message(BaseModel):
-    """Message schema definition."""
-    detail: Optional[str] = Field(example="error or success message")
+    detail: Optional[str] = None
 
 
 class OrderBase(BaseModel):
-    """Order base schema definition."""
-    number_of_pieces: int = Field(
-        description="Number of pieces to manufacture for the new order",
-        default=None,
-        example=10
-    )
-    description: str = Field(
-        description="Human readable description for the order",
-        default="No description",
-        example="CompanyX order on 2022-01-20"
-    )
+    number_of_pieces: int
+    description: str = "No description"
 
-    #  pieces = relationship("Piece", lazy="joined")
+
+class OrderPost(OrderBase):
+    number_of_pieces: int = Field(gt=0, le=10000)
+    client_id: int = Field(gt=0)
+    address: str = Field(min_length=1, max_length=500)
 
 
 class Order(OrderBase):
-    """Order schema definition."""
-
     model_config = ConfigDict(from_attributes=True)
-
-    id: int = Field(
-        description="Primary key/identifier of the order.",
-        default=None,
-        example=1
-    )
-
-    status: str = Field(
-        description="Current status of the order",
-        default="Created",
-        example="Finished"
-    )
-
+    id: int
+    status: str
+    client_id: Optional[int] = None
+    address: Optional[str] = None
+    unit_price: int
+    total_price: int
+    payment_completed: bool
+    manufacturing_requested: bool
+    delivery_id: Optional[int] = None
+    integration_error: Optional[str] = None
     creation_date: datetime
     update_date: datetime
 
 
-class OrderPost(OrderBase):
-    """Schema definition to create a new order."""
-
 class OrderStatusUpdate(BaseModel):
-    """Schema used to update an order status."""
+    status: Literal["Finished", "Delivered"]
 
-    status: str = Field(
-        description="New status for the order",
-        example="Finished"
-    )
+
+class Piece(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    order_id: int
+    status: str
+
+
+class PieceStatusUpdate(BaseModel):
+    status: Literal["Manufacturing", "Manufactured"]

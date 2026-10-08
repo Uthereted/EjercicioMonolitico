@@ -1,6 +1,8 @@
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
 from . import models
 
 
@@ -8,6 +10,13 @@ from . import models
 # Delivery functions ###############################################################################
 async def create_delivery_from_schema(db: AsyncSession, delivery):
     """Persist a new delivery into the database."""
+    existing = await db.scalar(select(models.Delivery).where(
+        models.Delivery.order_id == delivery.order_id, models.Delivery.workflow_managed.is_(True)
+    ))
+    if existing is not None:
+        if existing.client_id != delivery.client_id or existing.address != delivery.address:
+            raise HTTPException(409, "Order already has a delivery with different details")
+        return existing
     db_delivery = models.Delivery(
         client_id=delivery.client_id,
         order_id=delivery.order_id,
@@ -16,7 +25,11 @@ async def create_delivery_from_schema(db: AsyncSession, delivery):
         tracking_number=delivery.tracking_number,
     )
     db.add(db_delivery)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return await create_delivery_from_schema(db, delivery)
     await db.refresh(db_delivery)
     return db_delivery
 

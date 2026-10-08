@@ -8,6 +8,10 @@ services:
     environment:
         PYTHONUNBUFFERED: 1
         SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
+        CLIENT_SERVICE_URL: http://client_service:8000
+        PAYMENT_SERVICE_URL: http://paymentservice:8000
+        MACHINE_SERVICE_URL: http://machineservice:8000
+        DELIVERY_SERVICE_URL: http://delivery:8000
     restart: on-failure
 
   delivery:
@@ -19,6 +23,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
+      ORDERS_SERVICE_URL: http://order-service:8000
     restart: on-failure
 
   machineservice:
@@ -27,6 +32,7 @@ services:
       - '13002:8000'
     environment:
       PYTHONUNBUFFERED: 1
+      ORDERS_SERVICE_URL: http://order-service:8000
     restart: on-failure
 
   client_service:
@@ -52,7 +58,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/payment.db
-      CLIENT_SERVICE_URL: http://clientservice:8000
+      CLIENT_SERVICE_URL: http://client_service:8000
     restart: on-failure
 
   haproxy:

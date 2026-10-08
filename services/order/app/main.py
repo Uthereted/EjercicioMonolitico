@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 """Main file to start FastAPI application."""
 import logging.config
+import asyncio
 import os
+from contextlib import suppress
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from app.routers import main_router
 from app.sql import models
 from app.sql import database
+from app.sql import migrations
+from app import workflow
 
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
@@ -18,20 +22,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
+    async with database.engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.create_all)
+        await conn.run_sync(migrations.upgrade)
+    retry_task = asyncio.create_task(workflow.retry_pending_orders())
     try:
-        logger.info("Starting up")
-        try:
-            logger.info("Creating database tables")
-            async with database.engine.begin() as conn:
-                await conn.run_sync(models.Base.metadata.create_all)
-
-        except Exception:
-            logger.error(
-                "Could not create tables at startup",
-            )
         yield
     finally:
-        logger.info("Shutting down database")
+        retry_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await retry_task
         await database.engine.dispose()
 
 

@@ -5,14 +5,14 @@ meta {
 }
 
 delete {
-  url: {{baseURL}}/order/2
+  url: {{baseURL}}/order/{{orderId}}
   body: none
   auth: inherit
 }
 
 assert {
-  res.status: eq 200
-  res.body.id: eq {{orderId}}
+  res.status: eq 409
+  res.body.detail: isNotEmpty
 }
 
 settings {

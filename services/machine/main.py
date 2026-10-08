@@ -1,9 +1,19 @@
 from typing import List
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, status
-from app.dependencies import get_machine
+from app.dependencies import get_machine, stop_machine
 from app.async_machine import Machine
 
-app = FastAPI(title="Machine Service", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app):
+    await get_machine()
+    try:
+        yield
+    finally:
+        await stop_machine()
+
+
+app = FastAPI(title="Machine Service", version="1.0.0", lifespan=lifespan)
 
 @app.get("/machine/status")
 async def get_status(machine: Machine = Depends(get_machine)):

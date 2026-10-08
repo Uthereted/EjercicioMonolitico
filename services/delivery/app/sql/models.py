@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, String, TEXT, ForeignKey
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, TEXT, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -37,6 +37,8 @@ class Delivery(BaseModel):
     STATUS_CANCELED = "Canceled"
 
     __tablename__ = "delivery"
+    __table_args__ = (Index("uq_delivery_order", "order_id", unique=True,
+                           sqlite_where=text("workflow_managed = 1")),)
 
     id = Column(Integer, primary_key=True)
     client_id = Column(Integer, nullable=False)
@@ -44,3 +46,5 @@ class Delivery(BaseModel):
     address = Column(String(500), nullable=False)
     status = Column(String(50), nullable=False, default="Pending")
     tracking_number = Column(String(100), nullable=True)
+    order_notified = Column(Boolean, nullable=False, default=False, server_default="0")
+    workflow_managed = Column(Boolean, nullable=False, default=True, server_default="0")

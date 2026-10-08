@@ -13,16 +13,16 @@ MY_MACHINE = None
 import logging
 import os
 import httpx
+from .sql.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-CLIENT_SERVICE_URL = os.getenv("CLIENT_SERVICE_URL", "http://clientservice:8000")
+CLIENT_SERVICE_URL = os.getenv("CLIENT_SERVICE_URL", "http://localhost:13005")
 
 
 # Database #########################################################################################
 async def get_db():
     """Generates database sessions and closes them when finished."""
-    from app.sql.database import SessionLocal  # pylint: disable=import-outside-toplevel
     logger.debug("Getting database SessionLocal")
     db = SessionLocal()
     try:
@@ -30,6 +30,7 @@ async def get_db():
         await db.commit()
     except:
         await db.rollback()
+        raise
     finally:
         await db.close()
 
@@ -39,7 +40,9 @@ async def client_exists(client_id: int) -> bool:
     """Checks whether a client exists, calling the Client microservice's REST API."""
     async with httpx.AsyncClient(timeout=5.0) as http_client:
         try:
-            response = await http_client.get(f"{CLIENT_SERVICE_URL}/client/{client_id}")
+            response = await http_client.get(f"{CLIENT_SERVICE_URL}/clients/{client_id}")
+            if response.status_code != 404:
+                response.raise_for_status()
         except httpx.RequestError as exc:
             logger.error("Could not reach Client service: %s", exc)
             raise

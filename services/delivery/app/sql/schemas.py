@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Classes for Request/Response schema definitions."""
 # pylint: disable=too-few-public-methods
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict  # pylint: disable=no-name-in-module
 
@@ -27,6 +27,7 @@ class DeliveryBase(BaseModel):
 
 class DeliveryPost(DeliveryBase):
     """Fields required to create a delivery."""
+    status: Literal["Pending"] = "Pending"
 
 
 class Delivery(DeliveryBase):
@@ -37,3 +38,9 @@ class Delivery(DeliveryBase):
     id: int
     creation_date: Optional[datetime] = None
     update_date: Optional[datetime] = None
+    order_notified: bool = False
+
+
+class DeliveryStatusUpdate(BaseModel):
+    status: Literal["Ready", "Sent", "Delivered"]
+    tracking_number: Optional[str] = Field(default=None, max_length=100)
