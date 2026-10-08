@@ -1,7 +1,8 @@
 # Manufacturing Microservices
 
 El proyecto está dividido en cinco microservicios FastAPI: pedidos, máquinas,
-entregas, clientes y pagos. Cada servicio tiene su propio código y dependencias.
+entregas, clientes y pagos. Cada servicio tiene su propio código, contenedor,
+Dockerfile y `requirements.txt`.
 
 ## Estructura
 
@@ -17,14 +18,43 @@ compose.yml       # Ejecución conjunta
 dot_env_example   # Variables de entorno de ejemplo
 ```
 
-Cada carpeta de servicio contiene `app/`, `Dockerfile` y `requirements.txt`.
+Cada carpeta de servicio contiene su código en `app/`, su Dockerfile y su
+`requirements.txt` con las dependencias que utiliza.
 Los servicios usan `entrypoint.sh` y Hypercorn, salvo máquinas, que mantiene
 `main.py` en su raíz y arranca con Uvicorn.
 
 Pedidos incluye un Compose independiente en `services/order/compose.yml`,
 su volumen en `services/order/db_volume/` y documentación en `services/order/docs/`.
 Clientes utiliza `db_volume/`, entregas `delivery_volume/` y pagos
-`payment_db_volume/`. Estos datos se conservan.
+`payment_db_volume/`. Las bases se crean automáticamente al arrancar si no existen.
+
+## Dependencias e imágenes Docker
+
+Cada microservicio instala las librerías de su propio `requirements.txt`.
+Docker reutiliza la capa de instalación mientras no cambien ese archivo, la
+imagen Python o las instrucciones anteriores del Dockerfile. Cambiar únicamente
+el código no requiere reinstalar las dependencias. Evitar `--no-cache` y conservar
+la caché de Docker permite aprovechar esta reutilización.
+
+`coloredlogs` se conserva en pedidos y pagos porque su configuración de logs
+lo utiliza. `email-validator` es necesario para los correos de clientes.
+`SQLAlchemy[asyncio]` incluye `greenlet`, necesario para el acceso asíncrono
+a las bases de datos.
+
+Para construir todos los servicios:
+
+```bash
+docker compose build
+```
+
+Para reconstruir y arrancar solo pedidos después de cambiar su código:
+
+```bash
+docker compose up -d --build --no-deps order-service
+```
+
+Si se modifican las librerías de un servicio, reconstruir su imagen con
+`docker compose up -d --build --no-deps <nombre-del-servicio>`.
 
 ## Ejecutar con Docker Compose
 
@@ -32,7 +62,7 @@ Desde la raíz del repositorio, copiar el archivo de ejemplo a `.env` si todaví
 no existe. En PowerShell:
 
 ```powershell
-Copy-Item dot_env_example .env
+if (!(Test-Path .env)) { Copy-Item dot_env_example .env }
 docker compose up -d --build
 ```
 
@@ -60,14 +90,104 @@ docker compose -f services/order/compose.yml up -d --build
 | Clientes | `client_service` | 13005 | http://localhost:13005/client |
 | Pagos | `paymentservice` | 13006 | http://localhost:13006/payment |
 
-HAProxy escucha en el puerto `8080` y enruta `/api/order` a pedidos y
-`/api/delivery` a entregas. Su panel de estadísticas está en el puerto `8404`.
+## API Gateway
+
+HAProxy permite acceder a los cinco servicios mediante **http://localhost:8080**.
+Los puertos individuales de la tabla se conservan para depuración. Las llamadas
+internas entre servicios siguen usando la red Docker.
+
+| Operación | Método | Ruta en el gateway |
+| --- | --- | --- |
+| Estado del gateway | GET | `/health` |
+| Crear / listar clientes | POST / GET | `/api/clients` |
+| Consultar cliente | GET | `/api/clients/{id}` |
+| Ingresar saldo | POST | `/api/payments/{client_id}/deposit` |
+| Consultar saldo | GET | `/api/payments/{client_id}/balance` |
+| Crear / listar pedidos | POST / GET | `/api/orders` |
+| Consultar pedido | GET | `/api/orders/{id}` |
+| Consultar piezas del pedido | GET | `/api/orders/{id}/pieces` |
+| Reintentar pedido pendiente | POST | `/api/orders/{id}/retry` |
+| Consultar piezas | GET | `/api/pieces` |
+| Consultar máquina | GET | `/api/machine/status` |
+| Crear / listar entregas | POST / GET | `/api/deliveries` |
+| Consultar entrega | GET | `/api/deliveries/{id}` |
+| Actualizar entrega | PATCH | `/api/deliveries/{id}/status` |
+
+Los cuerpos JSON y los estados son los mismos que en las APIs de los servicios.
+Por ejemplo, una entrega se completa con `{"status":"Delivered"}`.
+Las URLs anteriores `/api/order/order` y `/api/delivery/delivery` siguen disponibles.
+Las rutas desconocidas devuelven 404. `/health` confirma que el gateway está activo;
+la disponibilidad de cada servicio se comprueba con sus peticiones y con las
+estadísticas de HAProxy en http://localhost:8404 (usuario y contraseña `admin`).
+La documentación Swagger continúa en los puertos individuales de la tabla.
+
+### Probar el flujo manualmente
+
+Con Docker Desktop abierto, ejecutar desde la raíz del repositorio:
+
+```powershell
+docker compose up -d
+docker compose restart haproxy
+```
+
+Si todavía no se han construido las imágenes, usar `docker compose up -d --build`
+en el primer comando.
+
+Desde Postman o Bruno, usar `http://localhost:8080` como URL base y
+`Content-Type: application/json` en las peticiones con cuerpo. Guardar los
+identificadores que devuelva cada respuesta:
+
+1. **Crear cliente:** `POST /api/clients`.
+
+   ```json
+   {"name":"Cliente de prueba","email":"prueba@example.org"}
+   ```
+
+2. **Ingresar saldo:** `POST /api/payments/{client_id}/deposit`.
+
+   ```json
+   {"amount":100}
+   ```
+
+3. **Crear pedido:** `POST /api/orders`. Sustituir `client_id` por el del cliente.
+
+   ```json
+   {
+     "client_id":1,
+     "number_of_pieces":3,
+     "description":"Prueba manual",
+     "address":"Calle Mayor 10"
+   }
+   ```
+
+4. **Consultar fabricación:** `GET /api/orders/{order_id}` y
+   `GET /api/orders/{order_id}/pieces`. Esperar a que el pedido sea
+   `ReadyForDelivery` y las tres piezas sean `Manufactured`.
+   El pedido devuelve el `delivery_id`.
+5. **Completar entrega:** `PATCH /api/deliveries/{delivery_id}/status`.
+
+   ```json
+   {"status":"Delivered","tracking_number":"PRUEBA-001"}
+   ```
+
+6. **Comprobar resultado:** `GET /api/orders/{order_id}` debe devolver
+   `Delivered`, y `GET /api/payments/{client_id}/balance` debe devolver saldo **70**.
+
+El precio es 10 unidades por pieza. Usar un email diferente al crear otro cliente.
+
+Para consultar el gateway o diagnosticar un fallo:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/health
+Invoke-RestMethod http://localhost:8080/api/orders
+docker compose logs --tail=100 haproxy
+```
 
 ## Desarrollo local
 
-Crear un entorno virtual e instalar las dependencias del servicio que se vaya a
-ejecutar. El directorio de trabajo y la raíz de fuentes deben ser la carpeta
-de ese servicio, por ejemplo `services/order`.
+Crear un entorno virtual e instalar las dependencias del microservicio que se
+quiera ejecutar. Usar su carpeta como directorio de trabajo, por ejemplo
+`services/order`.
 
 ```bash
 cd services/order
@@ -94,6 +214,7 @@ Antes de crear un pedido, registrar el cliente, ingresar saldo y configurar
 La consulta de máquinas utiliza `machineURL`. El ejemplo de actualización a
 `Finished` requiere que todas las piezas estén fabricadas; la eliminación de
 un pedido del flujo devuelve 409.
+El entorno Bruno `API Gateway` permite ejecutar la colección por el puerto `8080`.
 
 La carpeta raíz `docs/` y los diagramas UML heredados conservan documentación
 histórica de la aplicación original. Sus rutas y diagramas no representan
@@ -158,16 +279,4 @@ se conservan, incluso si había duplicados por pedido; la regla que evita duplic
 entregas y las notificaciones automáticas se aplican a las del nuevo flujo.
 El índice de cobro requiere que no existan cobros previos duplicados por pedido.
 
-HAProxy mantiene sus rutas actuales para pedidos y entregas. Los otros servicios
-se usan directamente por sus puertos; publicar más rutas queda fuera de esta fase.
-
-## Verificar el flujo
-
-Las pruebas de `tests/test_rest_flow.py` utilizan las cinco aplicaciones FastAPI,
-transporte HTTP ASGI y bases SQLite temporales; no acceden a los volúmenes reales.
-Con Python 3.11 o superior, instalar las dependencias y ejecutar:
-
-```bash
-python -m pip install -r tests/requirements.txt
-python -m pytest tests/test_rest_flow.py -q
-```
+HAProxy publica los cinco servicios bajo las rutas de la sección API Gateway.

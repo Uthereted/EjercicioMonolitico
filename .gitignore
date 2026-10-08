@@ -2,7 +2,6 @@
 #/venv/
 *.db
 #.env
-/tmp/rest-tests/
 
 
 # Created by https://www.gitignore.io/api/python,pycharm
