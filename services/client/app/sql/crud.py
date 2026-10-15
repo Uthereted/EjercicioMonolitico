@@ -10,8 +10,7 @@ async def create_client(db: AsyncSession, client: schemas.ClientCreate):
     return db_client
 
 async def get_client(db: AsyncSession, client_id: int):
-    result = await db.execute(select(models.Client).where(models.Client.id == client_id))
-    return result.scalar_one_or_none()
+    return await db.get(models.Client, client_id)
 
 async def get_clients(db: AsyncSession):
     result = await db.execute(select(models.Client))

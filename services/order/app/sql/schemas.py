@@ -48,3 +48,10 @@ class Piece(BaseModel):
 
 class PieceStatusUpdate(BaseModel):
     status: Literal["Manufacturing", "Manufactured"]
+
+
+class PaymentResult(BaseModel):
+    client_id: int = Field(gt=0)
+    amount: int = Field(gt=0)
+    accepted: bool
+    reason: str = "Payment rejected"

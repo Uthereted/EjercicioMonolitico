@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Database models definitions. Table representations as class."""
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, Index, text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -11,24 +11,6 @@ class BaseModel(Base):
     __abstract__ = True
     creation_date = Column(DateTime(timezone=True), server_default=func.now())
     update_date = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-
-    def __repr__(self):
-        fields = ""
-        for column in self.__table__.columns:
-            if fields == "":
-                fields = f"{column.name}='{getattr(self, column.name)}'"
-            else:
-                fields = f"{fields}, {column.name}='{getattr(self, column.name)}'"
-        return f"<{self.__class__.__name__}({fields})>"
-
-    @staticmethod
-    def list_as_dict(items):
-        """Returns list of items as dict."""
-        return [i.as_dict() for i in items]
-
-    def as_dict(self):
-        """Return the item as dict."""
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class Account(BaseModel):
@@ -42,11 +24,6 @@ class Account(BaseModel):
 
     transactions = relationship("Transaction", back_populates="account", lazy="joined")
 
-    def as_dict(self):
-        """Return the account item as dict."""
-        dictionary = super().as_dict()
-        dictionary['transactions'] = [t.as_dict() for t in self.transactions]
-        return dictionary
 
 
 class Transaction(BaseModel):
@@ -67,3 +44,13 @@ class Transaction(BaseModel):
     order_id = Column(Integer, nullable=True)
 
     account = relationship('Account', back_populates='transactions')
+
+
+class OrderPaymentResult(BaseModel):
+    """Retain accepted and rejected outcomes across message redelivery."""
+    __tablename__ = "order_payment_result"
+    order_id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, nullable=False)
+    amount = Column(Integer, nullable=False)
+    accepted = Column(Boolean, nullable=False)
+    reason = Column(String(500), nullable=False)

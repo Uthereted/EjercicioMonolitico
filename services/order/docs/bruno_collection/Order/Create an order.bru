@@ -24,7 +24,7 @@ vars:post-response {
 }
 
 assert {
-  res.status: eq 201
+  res.status: eq 202
   res.body.number_of_pieces: isNumber
   res.body.number_of_pieces: gt 0
   res.body.description: isNotEmpty
@@ -39,8 +39,9 @@ tests {
   */
   test("should be able to create", function() {
     const data = res.getBody();
-    expect(res.getStatus()).to.equal(201);
-    expect(data.payment_completed).to.eql(true);
+    expect(res.getStatus()).to.equal(202);
+    expect(data.payment_completed).to.eql(false);
+    expect(data.status).to.eql("PendingPayment");
     expect(data.total_price).to.eql(data.number_of_pieces * 10);
   });
 }

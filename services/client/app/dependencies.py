@@ -1,12 +1,6 @@
-from app.sql.database import SessionLocal
+from .sql.database import SessionLocal
+
 
 async def get_db():
-    db = SessionLocal()
-    try:
+    async with SessionLocal() as db:
         yield db
-        await db.commit()
-    except:
-        await db.rollback()
-        raise
-    finally:
-        await db.close()

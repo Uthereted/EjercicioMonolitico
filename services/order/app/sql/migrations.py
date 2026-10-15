@@ -10,6 +10,7 @@ def upgrade(connection):
         "unit_price": "INTEGER NOT NULL DEFAULT 10",
         "total_price": "INTEGER NOT NULL DEFAULT 0",
         "payment_completed": "BOOLEAN NOT NULL DEFAULT 0",
+        "order_created_published": "BOOLEAN NOT NULL DEFAULT 0",
         "manufacturing_requested": "BOOLEAN NOT NULL DEFAULT 0",
         "delivery_id": "INTEGER",
         "integration_error": "TEXT",

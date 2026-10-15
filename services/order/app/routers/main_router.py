@@ -1,6 +1,6 @@
 """Order API and internal manufacturing/delivery callbacks."""
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
@@ -17,8 +17,8 @@ async def require_order(db, order_id):
     return order
 
 
-@router.post("/order", response_model=schemas.Order, status_code=201, tags=["Order"])
-async def create_order(order_schema: schemas.OrderPost, response: Response,
+@router.post("/order", response_model=schemas.Order, status_code=202, tags=["Order"])
+async def create_order(order_schema: schemas.OrderPost,
                        db: AsyncSession = Depends(get_db)):
     await workflow.validate_client(order_schema.client_id)
     order = models.Order(
@@ -32,9 +32,6 @@ async def create_order(order_schema: schemas.OrderPost, response: Response,
                 for _ in range(order.number_of_pieces)])
     await db.commit()
     await db.refresh(order)
-    await workflow.resume_order(db, order)
-    if not order.payment_completed:
-        response.status_code = 202
     return order
 
 
@@ -127,3 +124,23 @@ async def remove_order_by_id(order_id: int, db: AsyncSession = Depends(get_db)):
         if order.client_id is not None:
             raise HTTPException(409, "Workflow orders are retained to prevent duplicate charges")
         return await crud.delete_order(db, order_id)
+
+
+@router.patch("/order/{order_id}/payment", response_model=schemas.Order, tags=["Order"])
+async def payment_result(order_id: int, result: schemas.PaymentResult,
+                         db: AsyncSession = Depends(get_db)):
+    async with workflow.locks[order_id]:
+        order = await require_order(db, order_id)
+        if order.client_id != result.client_id or order.total_price != result.amount:
+            raise HTTPException(409, "Payment details do not match the order")
+        if (order.payment_completed and not result.accepted) or (order.status == "Rejected" and result.accepted):
+            raise HTTPException(409, "Conflicting payment result")
+        if not order.payment_completed and order.status != "Rejected":
+            order.payment_completed = result.accepted
+            order.status = "Accepted" if result.accepted else "Rejected"
+            order.integration_error = None if result.accepted else result.reason
+            await db.commit()
+            await db.refresh(order)
+    if result.accepted:
+        await workflow.resume_order(db, order)
+    return order

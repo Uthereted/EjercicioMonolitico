@@ -1,8 +1,5 @@
-import logging.config
 import asyncio
-import os
-from contextlib import asynccontextmanager
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from .routers import delivery_router

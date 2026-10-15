@@ -221,12 +221,68 @@ histórica de la aplicación original. Sus rutas y diagramas no representan
 necesariamente la arquitectura actual; para probar pedidos, utilizar la
 colección indicada arriba.
 
-## Flujo REST
+## RabbitMQ y evento order.created
+
+Compose incluye RabbitMQ con almacenamiento persistente y panel en
+http://localhost:15672 (usuario y contraseña de desarrollo: `manufacturing`).
+El puerto AMQP es `5672`. Pedidos y pagos usan `aio-pika`.
+
+```text
+order-service -> manufacturing.events (topic)
+                  routing key: order.created
+                          -> payment.events -> paymentservice
+```
+
+Solo hay un exchange de aplicación, durable, y por ahora una cola durable por
+el servicio consumidor necesario: pagos. Máquinas y entregas necesitan primero
+la aceptación del pago y mantienen sus llamadas REST actuales. Clientes no
+necesita consumir este evento. RabbitMQ conserva sus exchanges internos estándar.
+
+El mensaje contiene `{order_id, client_id, amount}`. El propio pedido guarda
+`order_created_published`, que solo se activa tras la confirmación del broker.
+Así se reintenta la publicación si RabbitMQ falla, sin una tabla adicional.
+
+El contenedor se configura en `compose.yml`. Los módulos `messaging.py` de
+pedidos y pagos contienen las llamadas a RabbitMQ para publicar y consumir;
+Compose por sí solo no ejecuta esa lógica de Python.
+
+Pagos consume `payment.events`, realiza el cobro y comunica el resultado por
+`PATCH /order/{order_id}/payment`. Confirma el mensaje después de esa comunicación;
+si falla, lo reencola con una espera de cinco segundos. Los cobros y resultados
+rechazados se conservan por pedido para que una redelivery no cambie el resultado
+ni cobre dos veces. Los mensajes con formato o datos contradictorios se rechazan.
+No se incorporan todavía otros eventos.
+
+Para arrancar el proyecto actualizado:
+
+```bash
+docker compose up -d --build
+docker compose logs -f order-service paymentservice rabbitmq
+```
+
+Crear un pedido devuelve **202** con `PendingPayment`. Consultar después
+`GET /api/orders/{id}` para conocer el resultado; saldo insuficiente deja el pedido
+en `Rejected`, con el motivo en `integration_error`. La validación de cliente
+continúa siendo síncrona y devuelve 404 si no existe.
+
+Para desarrollo fuera de Docker, usar las variables `RABBITMQ_URL` y
+`RABBITMQ_EXCHANGE` del archivo de ejemplo. El Compose independiente de pedidos
+usa el RabbitMQ del host y requiere pagos y el resto de servicios en ejecución.
+
+Pruebas de persistencia, callbacks y cobros duplicados (con las dependencias
+de pedidos instaladas):
+
+```bash
+python tests/test_order_messaging.py
+python tests/test_payment_messaging.py
+```
+
+## Flujo de pedidos
 
 1. Crear el cliente con `POST /clients` en clientes.
 2. Ingresar saldo con `POST /payment/{client_id}/deposit` en pagos.
 3. Crear el pedido con `POST /order` en pedidos. El servicio valida al cliente,
-   calcula el importe y solicita el cobro. El precio fijo es **10 unidades de
+   calcula el importe y publica `order.created` para que pagos cobre. El precio fijo es **10 unidades de
    saldo por pieza**; no se introduce en la petición.
 4. Si el pago se acepta, el pedido solicita la fabricación de sus piezas en
    máquinas y crea la entrega con estado `Pending`.
@@ -248,11 +304,11 @@ Ejemplo de creación de pedido:
 }
 ```
 
-El importe de ese pedido es 30. Un cliente inexistente devuelve 404; saldo
-insuficiente devuelve 409 y no se solicita fabricación ni entrega. Los pedidos
+El importe de ese pedido es 30. Un cliente inexistente devuelve 404; con saldo
+insuficiente el pedido pasa a `Rejected` y no se solicita fabricación ni entrega. Los pedidos
 rechazados por pagos quedan registrados como `Rejected`.
 
-Si el cobro no puede confirmarse, el pedido devuelve 202 con `PendingPayment`.
+La creación devuelve 202 con `PendingPayment` mientras se procesa el evento.
 Si falla un servicio después de cobrar, queda `Pending` con `integration_error`.
 Los pasos pendientes se reintentan cada cinco segundos, también tras reiniciar.
 Se puede forzar un reintento con `POST /order/{order_id}/retry`.

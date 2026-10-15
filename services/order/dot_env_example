@@ -2,6 +2,8 @@ COMPOSE_PROJECT_NAME=order-service
 
 SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:///./orders.db
 CLIENT_SERVICE_URL=http://localhost:13005
-PAYMENT_SERVICE_URL=http://localhost:13006
 MACHINE_SERVICE_URL=http://localhost:13002
 DELIVERY_SERVICE_URL=http://localhost:13004
+
+RABBITMQ_URL=amqp://manufacturing:manufacturing@localhost:5672/
+RABBITMQ_EXCHANGE=manufacturing.events
