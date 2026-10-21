@@ -36,6 +36,9 @@ services:
     restart: on-failure
 
   delivery:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     build: services/delivery
     ports:
       - '13004:8000'
@@ -44,7 +47,8 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
-      ORDERS_SERVICE_URL: http://order-service:8000
+      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
   machineservice:

@@ -1,13 +1,15 @@
-"""Notify orders when deliveries finish, retaining callbacks across outages."""
+"""Publish completed deliveries, retaining pending events across outages."""
 import asyncio
+import json
 import logging
 import os
-import httpx
+import aio_pika
 from sqlalchemy import inspect, select, text
 from .sql import database, models
 
 logger = logging.getLogger(__name__)
-ORDERS_URL = os.getenv("ORDERS_SERVICE_URL", "http://localhost:13001").rstrip("/")
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
+EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events")
 RETRY_SECONDS = float(os.getenv("REST_RETRY_SECONDS", "5"))
 
 
@@ -25,12 +27,21 @@ async def notify_order(db, delivery):
     if not delivery.workflow_managed or delivery.status != "Delivered" or delivery.order_notified:
         return
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.patch(f"{ORDERS_URL}/order/{delivery.order_id}/status",
-                                          json={"status": "Delivered"})
-            response.raise_for_status()
-    except (httpx.RequestError, httpx.HTTPStatusError):
-        logger.warning("Order notification pending for delivery %s", delivery.id)
+        connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
+        async with connection:
+            channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
+            exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
+            queue = await channel.declare_queue("order.events", durable=True)
+            await queue.bind(exchange, routing_key="delivery.status.update")
+            await exchange.publish(aio_pika.Message(
+                body=json.dumps({"delivery_id": delivery.id, "order_id": delivery.order_id,
+                                 "status": "Delivered"}).encode(),
+                content_type="application/json",
+                message_id=f"delivery.status.update:{delivery.id}:Delivered",
+                type="delivery.status.update", delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ), routing_key="delivery.status.update", mandatory=True, timeout=5)
+    except Exception:
+        logger.exception("Delivery event pending for delivery %s", delivery.id)
         return
     delivery.order_notified = True
     await db.commit()
@@ -49,4 +60,4 @@ async def retry_notifications():
                 for delivery in deliveries:
                     await notify_order(db, delivery)
         except Exception:
-            logger.exception("Delivery callback retry failed; will retry later")
+            logger.exception("Delivery event retry failed; will retry later")

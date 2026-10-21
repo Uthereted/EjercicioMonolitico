@@ -225,18 +225,30 @@ colección indicada arriba.
 
 Compose incluye RabbitMQ con almacenamiento persistente y panel en
 http://localhost:15672 (usuario y contraseña de desarrollo: `manufacturing`).
-El puerto AMQP es `5672`. Pedidos y pagos usan `aio-pika`.
+El puerto AMQP es `5672`. Pedidos, pagos y entregas usan `aio-pika`.
 
 ```text
 order-service -> manufacturing.events (topic)
                   routing key: order.created
                           -> payment.events -> paymentservice
+
+delivery      -> manufacturing.events (topic)
+                  routing key: delivery.status.update
+                          -> order.events -> order-service
 ```
 
-Solo hay un exchange de aplicación, durable, y por ahora una cola durable por
-el servicio consumidor necesario: pagos. Máquinas y entregas necesitan primero
-la aceptación del pago y mantienen sus llamadas REST actuales. Clientes no
-necesita consumir este evento. RabbitMQ conserva sus exchanges internos estándar.
+Hay un exchange de aplicación durable y dos colas durables: `payment.events`
+para pagos y `order.events` para pedidos. La creación de entregas y el cambio a
+`Ready` mantienen sus llamadas REST actuales, igual que la integración con
+máquinas. Clientes no consume estos eventos.
+
+Entregas publica `delivery.status.update` únicamente al llegar a `Delivered`,
+con `{delivery_id, order_id, status}`. Pedidos consume `order.events`, comprueba
+que la entrega pertenece al pedido y aplica las mismas validaciones de pago y
+fabricación que la actualización REST. Confirma el mensaje después de guardar
+el estado `Delivered`; los fallos de procesamiento se reencolan y los mensajes
+inválidos se rechazan. Recibir el mismo aviso otra vez no cambia el resultado.
+`Ready` y `Sent` no publican eventos.
 
 El mensaje contiene `{order_id, client_id, amount}`. El propio pedido guarda
 `order_created_published`, que solo se activa tras la confirmación del broker.
@@ -251,7 +263,7 @@ Pagos consume `payment.events`, realiza el cobro y comunica el resultado por
 si falla, lo reencola con una espera de cinco segundos. Los cobros y resultados
 rechazados se conservan por pedido para que una redelivery no cambie el resultado
 ni cobre dos veces. Los mensajes con formato o datos contradictorios se rechazan.
-No se incorporan todavía otros eventos.
+Las demás comunicaciones de pagos mantienen su flujo REST.
 
 Para arrancar el proyecto actualizado:
 
@@ -275,6 +287,7 @@ de pedidos instaladas):
 ```bash
 python tests/test_order_messaging.py
 python tests/test_payment_messaging.py
+python tests/test_delivery_messaging.py
 ```
 
 ## Flujo de pedidos
@@ -291,7 +304,8 @@ python tests/test_payment_messaging.py
    como `Ready` y el pedido como `ReadyForDelivery`.
 6. Actualizar la entrega con `PATCH /deliveries/delivery/{delivery_id}/status`,
    indicando `Sent` o `Delivered` y, opcionalmente, `tracking_number`.
-   Al llegar a `Delivered`, entregas notifica a pedidos para cerrar el flujo.
+   Al llegar a `Delivered`, entregas publica el aviso RabbitMQ que pedidos consume
+   para cerrar el flujo.
 
 Ejemplo de creación de pedido:
 
@@ -319,8 +333,10 @@ reutilizar identificadores de cobro sin un proceso de cancelación/reembolso.
 Pedidos conserva las piezas en su base de datos. `GET /order/{order_id}/pieces`
 permite ver su estado. Máquinas recupera las piezas pagadas en cola o en
 fabricación desde pedidos y reintenta sus notificaciones si falla la conexión.
-Si entregas no puede notificar un pedido entregado, conserva `order_notified=false`
-y reintenta la notificación al volver el servicio.
+Si entregas no puede publicar un aviso de entrega completada, conserva
+`order_notified=false` y reintenta la publicación. Ese campo pasa a `true` tras
+la confirmación del broker; la actualización del pedido ocurre al consumir
+el mensaje. No se vuelve a publicar para entregas ya notificadas anteriormente.
 
 Compose configura las URLs internas usando los nombres de los servicios.
 Para desarrollo local, las URLs por defecto utilizan los puertos de la tabla.

@@ -1,16 +1,66 @@
-"""Publish order.created for orders awaiting payment."""
+"""Publish order.created and consume completed delivery notifications."""
 import asyncio
 import json
 import logging
 import os
+from typing import Literal
 
 import aio_pika
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from .sql import database, models
 
 logger = logging.getLogger(__name__)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
 EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events")
+
+
+class DeliveryStatusUpdate(BaseModel):
+    delivery_id: int = Field(gt=0)
+    order_id: int = Field(gt=0)
+    status: Literal["Delivered"]
+
+
+async def handle_delivery_update(event):
+    from .routers import main_router
+    from .sql import schemas
+
+    async with database.SessionLocal() as db:
+        order = await main_router.require_order(db, event.order_id)
+        if order.delivery_id != event.delivery_id:
+            raise ValueError("Delivery does not match the order")
+        await main_router.update_order_status(
+            event.order_id, schemas.OrderStatusUpdate(status=event.status), db,
+        )
+
+
+async def consume_delivery_updates():
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
+            async with connection:
+                channel = await connection.channel()
+                await channel.set_qos(prefetch_count=1)
+                exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
+                queue = await channel.declare_queue("order.events", durable=True)
+                await queue.bind(exchange, routing_key="delivery.status.update")
+                async with queue.iterator() as messages:
+                    async for message in messages:
+                        try:
+                            event = DeliveryStatusUpdate.model_validate_json(message.body)
+                            await handle_delivery_update(event)
+                        except (ValidationError, ValueError):
+                            logger.exception("Invalid delivery.status.update; rejecting")
+                            await message.reject(requeue=False)
+                        except Exception:
+                            logger.exception("Delivery update pending; retrying")
+                            await asyncio.sleep(5)
+                            await message.nack(requeue=True)
+                        else:
+                            await message.ack()
+        except Exception:
+            logger.exception("Delivery consumer unavailable; retrying in five seconds")
+            await asyncio.sleep(5)
 
 
 async def publish_pending_events():
