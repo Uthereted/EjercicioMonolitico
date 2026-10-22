@@ -261,7 +261,7 @@ colección indicada arriba.
 
 Compose incluye RabbitMQ con almacenamiento persistente y panel en
 http://localhost:15672 (usuario y contraseña de desarrollo: `manufacturing`).
-El puerto AMQP es `5672`. Pedidos, pagos y entregas usan `aio-pika`.
+El puerto AMQP es `5672`. Pedidos, pagos, máquinas y entregas usan `aio-pika`.
 
 ```text
 order-service -> manufacturing.events (topic)
@@ -275,13 +275,33 @@ paymentservice -> manufacturing.events (topic)
 delivery      -> manufacturing.events (topic)
                   routing key: delivery.status.update
                           -> order.events -> order-service
+
+order-service -> manufacturing.events (topic)
+                  routing key: machine.pieces.requested
+                          -> machine.events -> machineservice
+
+machineservice -> manufacturing.events (topic)
+                  routing key: piece.status.update
+                          -> order.events -> order-service
 ```
 
-Hay un exchange de aplicación durable y tres colas durables: `payment.events`
+Hay un exchange de aplicación durable y cuatro colas durables: `payment.events`
 para pagos, `order.payment.events` para resultados de pago y `order.events`
-para avisos de entrega a pedidos. La creación de entregas y el cambio a
-`Ready` mantienen sus llamadas REST actuales, igual que la integración con
-máquinas. Clientes no consume estos eventos.
+para avisos de entrega y piezas a pedidos, y `machine.events` para solicitudes
+de fabricación. Un único consumidor de `order.events` distingue ambos tipos
+por su routing key. La creación de entregas y el cambio a `Ready` mantienen
+sus llamadas REST actuales. Clientes no consume estos eventos.
+
+Tras aceptar el pago, pedidos publica `machine.pieces.requested` con
+`{order_id, piece_ids}`. Guarda `manufacturing_requested=true` solo después
+de la confirmación del broker; los fallos quedan pendientes para reintento.
+Máquinas publica `piece.status.update` con `{piece_id, status}`, primero
+`Manufacturing` y después `Manufactured`, reintentando hasta recibir confirmación.
+Pedidos guarda cada cambio antes de confirmar el mensaje. Los duplicados no
+hacen retroceder una pieza terminada. Máquinas evita encolar de nuevo piezas
+ya completadas en el proceso actual, aunque la recuperación REST todavía las
+devuelva mientras pedidos consume sus eventos. Tras reiniciar, recupera desde
+pedidos las piezas pagadas que siguen pendientes.
 
 Entregas publica `delivery.status.update` únicamente al llegar a `Delivered`,
 con `{delivery_id, order_id, status}`. Pedidos consume `order.events`, comprueba
@@ -332,7 +352,19 @@ de pedidos instaladas):
 python tests/test_order_messaging.py
 python tests/test_payment_messaging.py
 python tests/test_delivery_messaging.py
+python tests/test_machine_messaging.py
 ```
+
+Prueba completa con todos los servicios arrancados y `httpx` instalado:
+
+```bash
+python tests/test_workflow_integration.py
+```
+
+Crea un cliente de prueba, ingresa 100 y pide dos piezas; comprueba los estados
+de fabricación, la entrega por evento y el saldo final de 80. Conserva esos
+registros para poder revisarlos. `API_BASE_URL` permite cambiar el gateway
+(por defecto `http://localhost:8080`).
 
 ## Flujo de pedidos
 
@@ -343,8 +375,8 @@ python tests/test_delivery_messaging.py
    saldo por pieza**; no se introduce en la petición.
 4. Si el pago se acepta, el pedido solicita la fabricación de sus piezas en
    máquinas y crea la entrega con estado `Pending`.
-5. Máquinas notifica el inicio y fin de cada pieza a pedidos mediante
-   `PATCH /piece/{piece_id}`. Cuando todas terminan, pedidos marca la entrega
+5. Máquinas notifica el inicio y fin de cada pieza mediante el evento
+   `piece.status.update`. Cuando todas terminan, pedidos marca la entrega
    como `Ready` y el pedido como `ReadyForDelivery`.
 6. Actualizar la entrega con `PATCH /deliveries/delivery/{delivery_id}/status`,
    indicando `Sent` o `Delivered` y, opcionalmente, `tracking_number`.

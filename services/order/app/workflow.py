@@ -1,4 +1,4 @@
-"""Continue paid orders through the remaining REST integrations."""
+"""Continue paid orders through manufacturing events and delivery REST calls."""
 import asyncio
 import logging
 import os
@@ -6,12 +6,12 @@ from collections import defaultdict
 import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
+from . import messaging
 from .sql import database, models
 
 logger = logging.getLogger(__name__)
 UNIT_PRICE = 10
 CLIENT_URL = os.getenv("CLIENT_SERVICE_URL", "http://localhost:13005").rstrip("/")
-MACHINE_URL = os.getenv("MACHINE_SERVICE_URL", "http://localhost:13002").rstrip("/")
 DELIVERY_URL = os.getenv("DELIVERY_SERVICE_URL", "http://localhost:13004").rstrip("/")
 RETRY_SECONDS = float(os.getenv("REST_RETRY_SECONDS", "5"))
 locks = defaultdict(asyncio.Lock)
@@ -46,15 +46,17 @@ async def resume_order(db, order):
             pieces = await pieces_for_order(db, order.id)
             if not order.manufacturing_requested:
                 try:
-                    response = await client.post(
-                        f"{MACHINE_URL}/machine/queue",
-                        json=[piece.id for piece in pieces if piece.status != "Manufactured"],
-                    )
-                    response.raise_for_status()
+                    piece_ids = [piece.id for piece in pieces if piece.status != "Manufactured"]
+                    if piece_ids:
+                        await messaging.publish_event(
+                            "machine.pieces.requested", "machine.events",
+                            {"order_id": order.id, "piece_ids": piece_ids},
+                            message_id=f"machine.pieces.requested:{order.id}",
+                        )
                     order.manufacturing_requested = True
                     await db.commit()
                     await db.refresh(order)
-                except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+                except Exception as exc:
                     errors.append(f"Manufacturing pending: {exc}")
 
             if order.delivery_id is None:
@@ -71,7 +73,7 @@ async def resume_order(db, order):
                 except (httpx.RequestError, httpx.HTTPStatusError) as exc:
                     errors.append(f"Delivery creation pending: {exc}")
 
-            # Read again: machine callbacks may have arrived during REST calls.
+            # Read again: piece events may have arrived during the calls above.
             for piece in pieces:
                 await db.refresh(piece)
             finished = len(pieces) == order.number_of_pieces and all(

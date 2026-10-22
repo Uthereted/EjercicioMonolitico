@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from contextlib import suppress
-from typing import List, Literal
+from typing import Annotated, List, Literal
 
 import aio_pika
 from pydantic import BaseModel, Field, ValidationError
@@ -16,7 +16,7 @@ EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events")
 
 class PiecesRequested(BaseModel):
     order_id: int = Field(gt=0)
-    piece_ids: List[int] = Field(min_length=1)
+    piece_ids: List[Annotated[int, Field(gt=0, strict=True)]] = Field(min_length=1)
 
 
 class Publisher:

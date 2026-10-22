@@ -1,4 +1,4 @@
-"""Publish order.created and consume payment and delivery results."""
+"""Publish order/manufacturing requests and consume workflow results."""
 import asyncio
 import json
 import logging
@@ -22,6 +22,41 @@ class DeliveryStatusUpdate(BaseModel):
     status: Literal["Delivered"]
 
 
+class PieceStatusUpdate(BaseModel):
+    piece_id: int = Field(gt=0)
+    status: Literal["Manufacturing", "Manufactured"]
+
+
+async def publish_event(routing_key, queue_name, payload, message_id):
+    connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
+    async with connection:
+        channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
+        exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
+        queue = await channel.declare_queue(queue_name, durable=True)
+        await queue.bind(exchange, routing_key=routing_key)
+        await exchange.publish(aio_pika.Message(
+            body=json.dumps(payload).encode(), content_type="application/json",
+            message_id=message_id, type=routing_key,
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+        ), routing_key=routing_key, mandatory=True, timeout=5)
+
+
+async def handle_piece_update(event):
+    from .routers import main_router
+    from .sql import schemas
+
+    async with database.SessionLocal() as db:
+        try:
+            await main_router.update_piece(
+                event.piece_id, schemas.PieceStatusUpdate(status=event.status), db,
+            )
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                raise ValueError(exc.detail) from exc
+            # A temporarily out-of-order update can succeed on redelivery.
+            raise
+
+
 class PaymentResultEvent(BaseModel):
     order_id: int = Field(gt=0)
     client_id: int = Field(gt=0)
@@ -43,7 +78,27 @@ async def handle_delivery_update(event):
         )
 
 
-async def consume_delivery_updates():
+async def process_order_event(message):
+    """Dispatch both bindings of order.events before acknowledging persistence."""
+    try:
+        if message.routing_key == "delivery.status.update":
+            await handle_delivery_update(DeliveryStatusUpdate.model_validate_json(message.body))
+        elif message.routing_key == "piece.status.update":
+            await handle_piece_update(PieceStatusUpdate.model_validate_json(message.body))
+        else:
+            raise ValueError("Unknown order event routing key")
+    except (ValidationError, ValueError):
+        logger.exception("Invalid order event; rejecting")
+        await message.reject(requeue=False)
+    except Exception:
+        logger.exception("Order event processing pending; retrying")
+        await asyncio.sleep(5)
+        await message.nack(requeue=True)
+    else:
+        await message.ack()
+
+
+async def consume_order_events():
     while True:
         try:
             connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
@@ -53,22 +108,12 @@ async def consume_delivery_updates():
                 exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
                 queue = await channel.declare_queue("order.events", durable=True)
                 await queue.bind(exchange, routing_key="delivery.status.update")
+                await queue.bind(exchange, routing_key="piece.status.update")
                 async with queue.iterator() as messages:
                     async for message in messages:
-                        try:
-                            event = DeliveryStatusUpdate.model_validate_json(message.body)
-                            await handle_delivery_update(event)
-                        except (ValidationError, ValueError):
-                            logger.exception("Invalid delivery.status.update; rejecting")
-                            await message.reject(requeue=False)
-                        except Exception:
-                            logger.exception("Delivery update pending; retrying")
-                            await asyncio.sleep(5)
-                            await message.nack(requeue=True)
-                        else:
-                            await message.ack()
+                        await process_order_event(message)
         except Exception:
-            logger.exception("Delivery consumer unavailable; retrying in five seconds")
+            logger.exception("Order event consumer unavailable; retrying in five seconds")
             await asyncio.sleep(5)
 
 

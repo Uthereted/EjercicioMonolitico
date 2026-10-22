@@ -19,6 +19,9 @@ class Machine:
         self.publisher = publisher
         self.queue = asyncio.Queue()
         self.pending_ids = set()
+        # Broker confirmation precedes order persistence: recovery may still
+        # return a piece whose completion event is waiting to be consumed.
+        self.completed_ids = set()
         self.working_piece = None
         self.status = self.STATUS_WAITING
         self.retry_seconds = float(os.getenv("REST_RETRY_SECONDS", "5"))
@@ -76,6 +79,7 @@ class Machine:
                 await asyncio.sleep(delay)
                 self.status = self.STATUS_CHANGING_PIECE
                 await self.notify(piece_id, "Manufactured")
+                self.completed_ids.add(piece_id)
             finally:
                 self.pending_ids.discard(piece_id)
                 self.working_piece = None
@@ -84,7 +88,7 @@ class Machine:
 
     async def add_pieces_to_queue(self, piece_ids):
         for piece_id in piece_ids:
-            if piece_id not in self.pending_ids:
+            if piece_id not in self.pending_ids and piece_id not in self.completed_ids:
                 self.pending_ids.add(piece_id)
                 self.queue.put_nowait(piece_id)
 
@@ -109,4 +113,4 @@ class Machine:
         return removed
 
     async def list_queued_pieces(self):
-        return list(self.queue._queue)  
+        return list(self.queue._queue)
