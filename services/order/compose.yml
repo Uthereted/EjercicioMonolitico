@@ -7,8 +7,6 @@ services:
     build:
       context: ../..
       dockerfile: services/order/Dockerfile
-      additional_contexts:
-        chassis: ../../../chasis_homework
 
     ports:
       - "13001:8000"

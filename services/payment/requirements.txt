@@ -3,7 +3,7 @@ hypercorn~=0.17
 pydantic~=2.9
 SQLAlchemy[asyncio]~=2.0
 aiosqlite~=0.20
-../../../chasis_homework
+microservice_chassis @ git+https://github.com/Uthereted/chasis_homework.git@cd51a2e62a3421a7fe5c2260b7c52b848843ad4d
 httpx~=0.28
 
 aio-pika~=9.4

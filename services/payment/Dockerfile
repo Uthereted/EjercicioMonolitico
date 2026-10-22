@@ -3,11 +3,12 @@ FROM python:3.12-slim-bookworm
 # Configuration will be done as root
 USER root
 
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 # Update pip, copy requirements file and install dependencies
 RUN pip install --no-cache-dir --upgrade pip;
-WORKDIR /build/EjercicioMonolitico/services/payment
-COPY --from=chassis /setup.py /build/chasis_homework/setup.py
-COPY --from=chassis /my_chassis /build/chasis_homework/my_chassis
+WORKDIR /build
 COPY services/payment/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 

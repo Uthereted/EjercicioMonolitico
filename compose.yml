@@ -23,8 +23,6 @@ services:
     build:
       context: .
       dockerfile: services/order/Dockerfile
-      additional_contexts:
-        chassis: ../chasis_homework
     ports:
         - "13001:8000"
     volumes:
@@ -88,8 +86,6 @@ services:
     build:
       context: .
       dockerfile: services/payment/Dockerfile
-      additional_contexts:
-        chassis: ../chasis_homework
     ports:
       - '13006:8000'
     volumes:

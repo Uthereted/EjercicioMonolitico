@@ -36,13 +36,8 @@ las funciones que necesita; clientes, máquinas y entregas mantienen su código 
 
 El chasis vive en un repositorio independiente:
 [chasis_homework](https://github.com/Uthereted/chasis_homework).
-Debe estar clonado junto a este proyecto:
-
-```text
-GitHub/
-├── chasis_homework/       # Paquete my_chassis: logs y health
-└── EjercicioMonolitico/   # Microservicios que lo importan
-```
+Los requisitos de pedidos y pagos lo descargan directamente de GitHub. Solo
+es necesario clonar este proyecto; no hace falta una carpeta local del chasis.
 
 Pedidos y pagos importan `configure_logging` y `create_health_router` desde
 `my_chassis`. No hace falta arrancar una aplicación de chasis: es una librería
@@ -60,8 +55,9 @@ El primer endpoint devuelve `{"status":"ok","service":"order-service"}` y el
 segundo `{"status":"ok","service":"payment-service"}`. No comprueban la base
 de datos ni RabbitMQ. El `/health` del gateway en el puerto 8080 es independiente.
 
-Si se modifica el chasis, reconstruir pedidos y pagos para instalar la nueva
-versión: `docker compose up -d --build order-service paymentservice`.
+La dependencia está fijada a un commit del chasis para que todos los equipos
+instalen la misma versión. Para actualizarla, subir los cambios del chasis,
+cambiar su commit en ambos `requirements.txt` y reconstruir pedidos y pagos.
 
 ## Dependencias e imágenes Docker
 
@@ -71,11 +67,12 @@ imagen Python o las instrucciones anteriores del Dockerfile. Cambiar únicamente
 el código no requiere reinstalar las dependencias. Evitar `--no-cache` y conservar
 la caché de Docker permite aprovechar esta reutilización.
 
-Pedidos y pagos usan el paquete del repositorio vecino `chasis_homework/` para
-configurar los logs y ofrecer `GET /health`. Sus requisitos instalan
-`../../../chasis_homework`, por lo que la
-instalación local debe ejecutarse desde la carpeta de cada servicio.
-Docker Compose lo pasa como contexto adicional `chassis` al construir sus imágenes.
+Pedidos y pagos instalan `microservice_chassis` desde GitHub para configurar
+los logs y ofrecer `GET /health`. Python lo importa como `my_chassis`.
+Los Dockerfile incluyen Git y certificados para descargarlo durante la construcción.
+En otro PC, clonar este repositorio, copiar `dot_env_example` a `.env` y ejecutar
+`docker compose up -d --build`. Fuera de Docker, instalar Git y ejecutar
+`python -m pip install -r requirements.txt` desde la carpeta del servicio.
 `email-validator` es necesario para los correos de clientes.
 `SQLAlchemy[asyncio]` incluye `greenlet`, necesario para el acceso asíncrono
 a las bases de datos.
