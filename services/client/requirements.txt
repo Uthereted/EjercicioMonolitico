@@ -8,3 +8,4 @@ aio-pika~=9.4
 PyJWT[crypto]~=2.9
 bcrypt~=4.1
 cryptography~=42.0
+microservice_chassis @ git+https://github.com/Uthereted/chasis_homework.git@main

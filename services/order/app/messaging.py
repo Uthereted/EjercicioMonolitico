@@ -1,11 +1,11 @@
 """Publish order/manufacturing requests and consume workflow results."""
 import asyncio
-import json
 import logging
 import os
 from typing import Literal
 
 import aio_pika
+from my_chassis.messaging import create_json_message, publish_json_event
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
@@ -28,17 +28,9 @@ class PieceStatusUpdate(BaseModel):
 
 
 async def publish_event(routing_key, queue_name, payload, message_id):
-    connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
-    async with connection:
-        channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
-        exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
-        queue = await channel.declare_queue(queue_name, durable=True)
-        await queue.bind(exchange, routing_key=routing_key)
-        await exchange.publish(aio_pika.Message(
-            body=json.dumps(payload).encode(), content_type="application/json",
-            message_id=message_id, type=routing_key,
-            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-        ), routing_key=routing_key, mandatory=True, timeout=5)
+    await publish_json_event(
+        RABBITMQ_URL, EXCHANGE, routing_key, queue_name, payload, message_id,
+    )
 
 
 async def handle_piece_update(event):
@@ -188,10 +180,8 @@ async def publish_pending_events():
                         for order in orders:
                             payload = {"order_id": order.id, "client_id": order.client_id,
                                        "amount": order.total_price}
-                            await exchange.publish(aio_pika.Message(
-                                body=json.dumps(payload).encode(), content_type="application/json",
-                                message_id=f"order.created:{order.id}", type="order.created",
-                                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                            await exchange.publish(create_json_message(
+                                payload, "order.created", f"order.created:{order.id}",
                             ), routing_key="order.created", mandatory=True, timeout=5)
                             order.order_created_published = True
                             await db.commit()

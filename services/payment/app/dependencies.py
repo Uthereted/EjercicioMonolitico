@@ -1,3 +1,4 @@
+from my_chassis.database import create_db_dependency
 import os
 import httpx
 from .sql.database import SessionLocal
@@ -5,9 +6,7 @@ from .sql.database import SessionLocal
 CLIENT_SERVICE_URL = os.getenv("CLIENT_SERVICE_URL", "http://localhost:13005").rstrip("/")
 
 
-async def get_db():
-    async with SessionLocal() as db:
-        yield db
+get_db = create_db_dependency(SessionLocal)
 
 
 async def client_exists(client_id: int) -> bool:

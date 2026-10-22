@@ -1,9 +1,8 @@
 """Publish completed deliveries, retaining pending events across outages."""
 import asyncio
-import json
 import logging
 import os
-import aio_pika
+from my_chassis.messaging import publish_json_event
 from sqlalchemy import inspect, select, text
 from .sql import database, models
 
@@ -27,19 +26,11 @@ async def notify_order(db, delivery):
     if not delivery.workflow_managed or delivery.status != "Delivered" or delivery.order_notified:
         return
     try:
-        connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
-        async with connection:
-            channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
-            exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
-            queue = await channel.declare_queue("order.events", durable=True)
-            await queue.bind(exchange, routing_key="delivery.status.update")
-            await exchange.publish(aio_pika.Message(
-                body=json.dumps({"delivery_id": delivery.id, "order_id": delivery.order_id,
-                                 "status": "Delivered"}).encode(),
-                content_type="application/json",
-                message_id=f"delivery.status.update:{delivery.id}:Delivered",
-                type="delivery.status.update", delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            ), routing_key="delivery.status.update", mandatory=True, timeout=5)
+        await publish_json_event(
+            RABBITMQ_URL, EXCHANGE, "delivery.status.update", "order.events",
+            {"delivery_id": delivery.id, "order_id": delivery.order_id, "status": "Delivered"},
+            f"delivery.status.update:{delivery.id}:Delivered",
+        )
     except Exception:
         logger.exception("Delivery event pending for delivery %s", delivery.id)
         return

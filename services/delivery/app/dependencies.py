@@ -1,6 +1,5 @@
+from my_chassis.database import create_db_dependency
 from .sql.database import SessionLocal
 
 
-async def get_db():
-    async with SessionLocal() as db:
-        yield db
+get_db = create_db_dependency(SessionLocal)

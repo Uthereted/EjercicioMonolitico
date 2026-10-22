@@ -2,9 +2,9 @@
 import asyncio
 import logging
 import os
-import json
 
 import aio_pika
+from my_chassis.messaging import publish_json_event
 from pydantic import BaseModel, Field, ValidationError
 from .sql import crud, database, models
 
@@ -49,28 +49,11 @@ async def publish_payment_result(result):
         "accepted": result.accepted,
         "reason": result.reason,
     }
-    connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
-    async with connection:
-        channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
-        exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
-        # Declare and bind the durable queue here too, so the event is retained
-        # even if Order Service is still starting up.
-        queue = await channel.declare_queue("order.payment.events", durable=True)
-        await queue.bind(exchange, routing_key="payment.approved")
-        await queue.bind(exchange, routing_key="payment.rejected")
-        await exchange.publish(
-            aio_pika.Message(
-                body=json.dumps(payload).encode(),
-                content_type="application/json",
-                message_id=f"{routing_key}:{result.order_id}",
-                type=routing_key,
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            ),
-            routing_key=routing_key,
-            mandatory=True,
-            timeout=5,
-        )
-        logger.info("Published %s for order %s", routing_key, result.order_id)
+    await publish_json_event(
+        RABBITMQ_URL, EXCHANGE, routing_key, "order.payment.events", payload,
+        f"{routing_key}:{result.order_id}", bindings=("payment.approved", "payment.rejected"),
+    )
+    logger.info("Published %s for order %s", routing_key, result.order_id)
 
 
 async def consume_orders():

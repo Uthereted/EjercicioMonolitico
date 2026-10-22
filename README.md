@@ -30,17 +30,28 @@ Clientes utiliza `db_volume/`, entregas `delivery_volume/` y pagos
 
 ## Chasis compartido
 
-Pedidos y pagos utilizan dos funciones del chasis: configuración común de logs
-y un endpoint `GET /health` que identifica el servicio. Cada microservicio importa
-las funciones que necesita; clientes, máquinas y entregas mantienen su código actual.
+El chasis reúne utilidades de infraestructura compartidas por los servicios:
+
+| Utilidad | Servicios |
+| --- | --- |
+| Logs y `GET /health` | Pedidos y pagos |
+| Sesión de base de datos por petición (`create_db_dependency`) | Clientes, entregas, pedidos y pagos |
+| Publicación JSON persistente en RabbitMQ (`publish_json_event`) | Pedidos, pagos y entregas |
+| Construcción de mensajes JSON (`create_json_message`) | Publicador de eventos pendientes de pedidos |
+
+La verificación JWT permanece en el proyecto, en pedidos y pagos.
+El chasis no contiene modelos, reglas de negocio ni commits de base de datos.
+La publicación confirma el envío y prepara la cola antes de enviar; los servicios
+siguen gestionando los reintentos y marcando los eventos como publicados.
 
 El chasis vive en un repositorio independiente:
 [chasis_homework](https://github.com/Uthereted/chasis_homework).
-Los requisitos de pedidos y pagos lo descargan directamente de GitHub. Solo
+Los requisitos de clientes, entregas, pedidos y pagos lo descargan de GitHub. Solo
 es necesario clonar este proyecto; no hace falta una carpeta local del chasis.
 
 Pedidos y pagos importan `configure_logging` y `create_health_router` desde
-`my_chassis`. No hace falta arrancar una aplicación de chasis: es una librería
+`my_chassis`. Las sesiones se importan de `my_chassis.database` y los publicadores
+de `my_chassis.messaging`. No hace falta arrancar una aplicación de chasis: es una librería
 instalada en cada servicio. El repositorio separado contiene las funciones,
 la configuración de instalación y un README de uso.
 
@@ -56,8 +67,8 @@ segundo `{"status":"ok","service":"payment-service"}`. No comprueban la base
 de datos ni RabbitMQ. El `/health` del gateway en el puerto 8080 es independiente.
 
 La dependencia utiliza la rama `main` del chasis. Después de subir cambios al
-chasis, ejecutar `docker compose build --no-cache order-service paymentservice`
-y `docker compose up -d order-service paymentservice` para reinstalarlo.
+chasis, ejecutar `docker compose build --no-cache order-service paymentservice delivery client_service`
+y `docker compose up -d order-service paymentservice delivery client_service` para reinstalarlo.
 
 ## Dependencias e imágenes Docker
 
@@ -67,8 +78,9 @@ imagen Python o las instrucciones anteriores del Dockerfile. Cambiar únicamente
 el código no requiere reinstalar las dependencias. Evitar `--no-cache` y conservar
 la caché de Docker permite aprovechar esta reutilización.
 
-Pedidos y pagos instalan `microservice_chassis` desde GitHub para configurar
-los logs y ofrecer `GET /health`. Python lo importa como `my_chassis`.
+Clientes, entregas, pedidos y pagos instalan `microservice_chassis` desde GitHub.
+Los servicios que publican eventos seleccionan el extra `[messaging]`.
+Python lo importa como `my_chassis`.
 Los Dockerfile incluyen Git y certificados para descargarlo durante la construcción.
 En otro PC, clonar este repositorio, copiar `dot_env_example` a `.env` y ejecutar
 `docker compose up -d --build`. Fuera de Docker, instalar Git y ejecutar

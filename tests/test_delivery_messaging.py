@@ -10,6 +10,7 @@ os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/delivery"))
 
 from app import workflow
+from my_chassis import messaging as chassis_messaging
 from app.sql import database, models
 
 
@@ -27,7 +28,7 @@ class DeliveryMessagingTests(unittest.IsolatedAsyncioTestCase):
             delivery = models.Delivery(order_id=12, client_id=1, address="Madrid", status=status)
             db.add(delivery)
             await db.commit()
-            with patch.object(workflow.aio_pika, "connect_robust", new=AsyncMock()) as connect:
+            with patch.object(chassis_messaging.aio_pika, "connect_robust", new=AsyncMock()) as connect:
                 exchange = connect.return_value.channel.return_value.declare_exchange.return_value
                 if failure:
                     exchange.publish.side_effect = RuntimeError("broker unavailable")
