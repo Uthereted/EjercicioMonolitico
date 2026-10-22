@@ -1,4 +1,4 @@
-"""Publish order.created and consume completed delivery notifications."""
+"""Publish order.created and consume payment and delivery results."""
 import asyncio
 import json
 import logging
@@ -6,6 +6,7 @@ import os
 from typing import Literal
 
 import aio_pika
+from fastapi import HTTPException
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from .sql import database, models
@@ -73,25 +74,18 @@ async def consume_delivery_updates():
 
 async def handle_payment_result(event: PaymentResultEvent):
     """Apply a payment.approved/payment.rejected event idempotently."""
-    from . import workflow
+    from .routers import main_router
     from .sql import schemas
 
     async with database.SessionLocal() as db:
-        order = await db.get(models.Order, event.order_id)
-        if order is None:
-            raise ValueError(f"Order {event.order_id} does not exist")
-        if order.client_id != event.client_id or order.total_price != event.amount:
-            raise ValueError("Payment details do not match the order")
-        if (order.payment_completed and not event.accepted) or (order.status == "Rejected" and event.accepted):
-            raise ValueError("Conflicting payment result")
-        if not order.payment_completed and order.status != "Rejected":
-            order.payment_completed = event.accepted
-            order.status = "Accepted" if event.accepted else "Rejected"
-            order.integration_error = None if event.accepted else event.reason
-            await db.commit()
-            await db.refresh(order)
-        if event.accepted:
-            await workflow.resume_order(db, order)
+        try:
+            await main_router.payment_result(
+                event.order_id, schemas.PaymentResult(**event.model_dump(exclude={"order_id"})), db,
+            )
+        except HTTPException as exc:
+            if exc.status_code in (404, 409):
+                raise ValueError(exc.detail) from exc
+            raise
 
 
 async def consume_payment_results():

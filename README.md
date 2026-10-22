@@ -232,13 +232,18 @@ order-service -> manufacturing.events (topic)
                   routing key: order.created
                           -> payment.events -> paymentservice
 
+paymentservice -> manufacturing.events (topic)
+                  routing keys: payment.approved / payment.rejected
+                          -> order.payment.events -> order-service
+
 delivery      -> manufacturing.events (topic)
                   routing key: delivery.status.update
                           -> order.events -> order-service
 ```
 
-Hay un exchange de aplicación durable y dos colas durables: `payment.events`
-para pagos y `order.events` para pedidos. La creación de entregas y el cambio a
+Hay un exchange de aplicación durable y tres colas durables: `payment.events`
+para pagos, `order.payment.events` para resultados de pago y `order.events`
+para avisos de entrega a pedidos. La creación de entregas y el cambio a
 `Ready` mantienen sus llamadas REST actuales, igual que la integración con
 máquinas. Clientes no consume estos eventos.
 
@@ -258,12 +263,15 @@ El contenedor se configura en `compose.yml`. Los módulos `messaging.py` de
 pedidos y pagos contienen las llamadas a RabbitMQ para publicar y consumir;
 Compose por sí solo no ejecuta esa lógica de Python.
 
-Pagos consume `payment.events`, realiza el cobro y comunica el resultado por
-`PATCH /order/{order_id}/payment`. Confirma el mensaje después de esa comunicación;
-si falla, lo reencola con una espera de cinco segundos. Los cobros y resultados
+Pagos consume `payment.events`, realiza el cobro y publica `payment.approved`
+o `payment.rejected`, con `{order_id, client_id, amount, accepted, reason}`.
+Confirma `order.created` después de que el broker confirme la publicación del
+resultado; si falla, lo reencola con una espera de cinco segundos. Pedidos consume
+`order.payment.events` y confirma el resultado tras procesarlo. Los cobros y resultados
 rechazados se conservan por pedido para que una redelivery no cambie el resultado
 ni cobre dos veces. Los mensajes con formato o datos contradictorios se rechazan.
-Las demás comunicaciones de pagos mantienen su flujo REST.
+El resultado de pago ya no se comunica por REST. Pedidos conserva el endpoint
+anterior por compatibilidad, con las mismas validaciones que el consumidor.
 
 Para arrancar el proyecto actualizado:
 

@@ -1,5 +1,6 @@
 """Run independently: python tests/test_payment_messaging.py."""
 import os
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -50,6 +51,32 @@ class PaymentMessagingTests(unittest.IsolatedAsyncioTestCase):
             account = await crud.get_account_by_client_id(db, 1)
             self.assertEqual(account.balance, 100)
         self.assertFalse(self.publish_result.await_args.args[0].accepted)
+
+    async def test_publishes_approved_and_rejected_results(self):
+        self.publish_patch.stop()
+        for accepted in (True, False):
+            result = models.OrderPaymentResult(
+                order_id=1, client_id=1, amount=20, accepted=accepted,
+                reason="" if accepted else "Insufficient funds",
+            )
+            with patch.object(messaging.aio_pika, "connect_robust", new=AsyncMock()) as connect:
+                channel = connect.return_value.channel.return_value
+                exchange = channel.declare_exchange.return_value
+                queue = channel.declare_queue.return_value
+                await messaging.publish_payment_result(result)
+                channel.declare_queue.assert_awaited_once_with("order.payment.events", durable=True)
+                self.assertEqual([call.kwargs["routing_key"] for call in queue.bind.await_args_list],
+                                 ["payment.approved", "payment.rejected"])
+                message = exchange.publish.call_args.args[0]
+                self.assertEqual(json.loads(message.body), {
+                    "order_id": 1, "client_id": 1, "amount": 20,
+                    "accepted": accepted, "reason": result.reason,
+                })
+                self.assertEqual(exchange.publish.call_args.kwargs["routing_key"],
+                                 "payment.approved" if accepted else "payment.rejected")
+                exchange.publish.side_effect = ConnectionError("Broker unavailable")
+                with self.assertRaises(ConnectionError):
+                    await messaging.publish_payment_result(result)
 
 
 if __name__ == "__main__":

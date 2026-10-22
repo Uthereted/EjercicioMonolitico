@@ -61,6 +61,58 @@ class OrderMessagingTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(order.payment_completed)
             self.assertEqual(order.status, "Manufacturing")
 
+    async def test_payment_event_and_duplicate_preserve_progress(self):
+        async with database.SessionLocal() as db:
+            order = await self.create_order(db)
+            event = messaging.PaymentResultEvent(
+                order_id=order.id, client_id=1, amount=20, accepted=True,
+            )
+        with patch.object(workflow, "resume_order", new=AsyncMock()) as resume:
+            await messaging.handle_payment_result(event)
+            async with database.SessionLocal() as db:
+                order = await db.get(models.Order, event.order_id)
+                self.assertTrue(order.payment_completed)
+                self.assertEqual(order.status, "Accepted")
+                order.status = "Manufacturing"
+                await db.commit()
+            await messaging.handle_payment_result(event)
+            self.assertEqual(resume.await_count, 2)
+        async with database.SessionLocal() as db:
+            order = await db.get(models.Order, event.order_id)
+            self.assertEqual(order.status, "Manufacturing")
+
+    async def test_rejected_payment_event_does_not_start_manufacturing(self):
+        async with database.SessionLocal() as db:
+            order = await self.create_order(db)
+            event = messaging.PaymentResultEvent(
+                order_id=order.id, client_id=1, amount=20, accepted=False, reason="Insufficient funds",
+            )
+        with patch.object(workflow, "resume_order", new=AsyncMock()) as resume:
+            await messaging.handle_payment_result(event)
+            await messaging.handle_payment_result(event)
+            resume.assert_not_awaited()
+        async with database.SessionLocal() as db:
+            order = await db.get(models.Order, event.order_id)
+            self.assertFalse(order.payment_completed)
+            self.assertEqual(order.status, "Rejected")
+            self.assertEqual(order.integration_error, "Insufficient funds")
+        event.accepted = True
+        with self.assertRaises(ValueError):
+            await messaging.handle_payment_result(event)
+
+    async def test_payment_event_rejects_wrong_amount_or_client(self):
+        async with database.SessionLocal() as db:
+            order = await self.create_order(db)
+        for client_id, amount in ((2, 20), (1, 30)):
+            with self.assertRaises(ValueError):
+                await messaging.handle_payment_result(messaging.PaymentResultEvent(
+                    order_id=order.id, client_id=client_id, amount=amount, accepted=True,
+                ))
+        async with database.SessionLocal() as db:
+            order = await db.get(models.Order, order.id)
+            self.assertFalse(order.payment_completed)
+            self.assertEqual(order.status, "PendingPayment")
+
     async def check_publication(self, failure):
         async with database.SessionLocal() as db:
             await self.create_order(db)

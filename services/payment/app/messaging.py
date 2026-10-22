@@ -1,4 +1,4 @@
-"""Consume order.created and report the payment result through the existing REST flow."""
+"""Consume order.created and publish payment.approved or payment.rejected."""
 import asyncio
 import logging
 import os
