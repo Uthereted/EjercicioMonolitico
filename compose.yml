@@ -103,9 +103,11 @@ services:
     image: haproxy:latest
     ports:
       - "8080:8080"
+      - "8443:8443" # <-- Añades el puerto HTTPS
       - "8404:8404"
     volumes:
       - "./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"
+      - "./haproxy/gateway.pem:/usr/local/etc/haproxy/haproxy.pem:ro" # <-- Montas tu certificado
     environment:
       HAPROXY_PORT: 8080
       HAPROXY_STATS_PORT: 8404
