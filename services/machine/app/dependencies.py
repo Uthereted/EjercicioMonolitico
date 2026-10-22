@@ -2,6 +2,7 @@
 import asyncio
 import os
 from app.async_machine import Machine
+from app.messaging import Publisher
 
 MY_MACHINE = None
 lock = asyncio.Lock()
@@ -12,7 +13,7 @@ async def get_machine():
     global MY_MACHINE
     async with lock:
         if MY_MACHINE is None:
-            MY_MACHINE = await Machine.create(ORDERS_SERVICE_URL)
+            MY_MACHINE = await Machine.create(Publisher(), ORDERS_SERVICE_URL)
     return MY_MACHINE
 
 

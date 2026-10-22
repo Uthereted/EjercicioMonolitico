@@ -1,4 +1,4 @@
-"""Manufacturing simulator with durable order state and REST callbacks."""
+"""Manufacturing simulator: receives pieces and reports progress through RabbitMQ."""
 import asyncio
 import logging
 import os
@@ -14,8 +14,9 @@ class Machine:
     STATUS_CHANGING_PIECE = "Changing Piece"
     STATUS_WORKING = "Working"
 
-    def __init__(self, orders_service_url):
+    def __init__(self, orders_service_url, publisher):
         self.orders_service_url = orders_service_url.rstrip("/")
+        self.publisher = publisher
         self.queue = asyncio.Queue()
         self.pending_ids = set()
         self.working_piece = None
@@ -24,8 +25,8 @@ class Machine:
         self.tasks = []
 
     @classmethod
-    async def create(cls, orders_service_url="http://localhost:13001"):
-        machine = cls(orders_service_url)
+    async def create(cls, publisher, orders_service_url="http://localhost:13001"):
+        machine = cls(orders_service_url, publisher)
         machine.tasks = [asyncio.create_task(machine.manufacturing_coroutine()),
                          asyncio.create_task(machine.recovery_coroutine())]
         return machine
@@ -36,6 +37,7 @@ class Machine:
         for task in self.tasks:
             with suppress(asyncio.CancelledError):
                 await task
+        await self.publisher.close()
 
     async def reload_queue_from_orders_service(self):
         async with httpx.AsyncClient(timeout=5) as client:
@@ -52,41 +54,28 @@ class Machine:
                 logger.warning("Order service unavailable; queue recovery will retry")
             await asyncio.sleep(self.retry_seconds)
 
+    async def notify(self, piece_id, status):
+        """Publish a piece status event, retrying until RabbitMQ confirms it."""
+        while True:
+            try:
+                await self.publisher.publish_piece_status(piece_id, status)
+                return
+            except Exception:
+                self.status = "PendingNotification"
+                logger.warning("Piece %s %s event pending; retrying", piece_id, status)
+                await asyncio.sleep(self.retry_seconds)
+
     async def manufacturing_coroutine(self):
         while True:
             piece_id = await self.queue.get()
             self.working_piece = {"id": piece_id}
-            manufactured = False
             try:
-                while True:
-                    try:
-                        async with httpx.AsyncClient(timeout=5) as client:
-                            if not manufactured:
-                                response = await client.patch(
-                                    f"{self.orders_service_url}/piece/{piece_id}",
-                                    json={"status": "Manufacturing"},
-                                )
-                                if response.status_code in (404, 409):
-                                    logger.warning("Piece %s cannot be manufactured", piece_id)
-                                    break
-                                response.raise_for_status()
-                                if response.json()["status"] == "Manufactured":
-                                    break
-                                self.status = self.STATUS_WORKING
-                                delay = float(os.getenv("MANUFACTURING_SECONDS", str(randint(5, 20))))
-                                await asyncio.sleep(delay)
-                                manufactured = True
-                            self.status = self.STATUS_CHANGING_PIECE
-                            response = await client.patch(
-                                f"{self.orders_service_url}/piece/{piece_id}",
-                                json={"status": "Manufactured"},
-                            )
-                            response.raise_for_status()
-                        break
-                    except (httpx.RequestError, httpx.HTTPStatusError):
-                        self.status = "PendingNotification"
-                        logger.warning("Manufacturing notification pending for piece %s", piece_id)
-                        await asyncio.sleep(self.retry_seconds)
+                await self.notify(piece_id, "Manufacturing")
+                self.status = self.STATUS_WORKING
+                delay = float(os.getenv("MANUFACTURING_SECONDS", str(randint(5, 20))))
+                await asyncio.sleep(delay)
+                self.status = self.STATUS_CHANGING_PIECE
+                await self.notify(piece_id, "Manufactured")
             finally:
                 self.pending_ids.discard(piece_id)
                 self.working_piece = None
@@ -120,4 +109,4 @@ class Machine:
         return removed
 
     async def list_queued_pieces(self):
-        return list(self.queue._queue)
+        return list(self.queue._queue)  

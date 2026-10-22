@@ -1,0 +1,24 @@
+name: order-service
+
+services:
+
+  order-service:
+
+    build: .
+
+    ports:
+      - "13001:8000"
+
+    volumes:
+      - "./db_volume:/volume"
+
+    environment:
+      PYTHONUNBUFFERED: 1
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
+      CLIENT_SERVICE_URL: ${CLIENT_SERVICE_URL:-http://host.docker.internal:13005}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://manufacturing:manufacturing@host.docker.internal:5672/}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-manufacturing.events}
+      MACHINE_SERVICE_URL: ${MACHINE_SERVICE_URL:-http://host.docker.internal:13002}
+      DELIVERY_SERVICE_URL: ${DELIVERY_SERVICE_URL:-http://host.docker.internal:13004}
+
+    restart: on-failure
