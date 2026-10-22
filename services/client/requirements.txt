@@ -4,3 +4,4 @@ pydantic~=2.9
 SQLAlchemy[asyncio]~=2.0
 aiosqlite~=0.20
 email-validator
+aio-pika~=9.4

@@ -43,7 +43,7 @@ services:
     ports:
       - '13004:8000'
     volumes:
-      - './delivery_volume:/volume'
+      - '.services/delivery/delivery_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
@@ -66,7 +66,7 @@ services:
     ports:
       - '13005:8000'
     volumes:
-      - './db_volume:/volume'
+      - '.services/client/db_volume:/volume'
     environment:
       - PYTHONUNBUFFERED=1
       - SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:////volume/client.db
@@ -82,7 +82,7 @@ services:
     ports:
       - '13006:8000'
     volumes:
-      - './payment_db_volume:/volume'
+      - '.services/payment/payment_db_volume:/volume'
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/payment.db
