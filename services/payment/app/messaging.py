@@ -2,16 +2,15 @@
 import asyncio
 import logging
 import os
+import json
 
 import aio_pika
-import httpx
 from pydantic import BaseModel, Field, ValidationError
 from .sql import crud, database, models
 
 logger = logging.getLogger(__name__)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
 EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events")
-ORDERS_URL = os.getenv("ORDERS_SERVICE_URL", "http://localhost:13001").rstrip("/")
 
 
 class OrderCreated(BaseModel):
@@ -37,12 +36,41 @@ async def handle_order_created(data):
             await db.commit()
         if result.client_id != data.client_id or result.amount != data.amount:
             raise ValueError("Conflicting order.created payment details")
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.patch(f"{ORDERS_URL}/order/{data.order_id}/payment", json={
-                "client_id": result.client_id, "amount": result.amount,
-                "accepted": result.accepted, "reason": result.reason,
-            })
-            response.raise_for_status()
+        await publish_payment_result(result)
+
+
+async def publish_payment_result(result):
+    """Publish a durable payment outcome for Order Service to consume."""
+    routing_key = "payment.approved" if result.accepted else "payment.rejected"
+    payload = {
+        "order_id": result.order_id,
+        "client_id": result.client_id,
+        "amount": result.amount,
+        "accepted": result.accepted,
+        "reason": result.reason,
+    }
+    connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
+    async with connection:
+        channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
+        exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
+        # Declare and bind the durable queue here too, so the event is retained
+        # even if Order Service is still starting up.
+        queue = await channel.declare_queue("order.payment.events", durable=True)
+        await queue.bind(exchange, routing_key="payment.approved")
+        await queue.bind(exchange, routing_key="payment.rejected")
+        await exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(payload).encode(),
+                content_type="application/json",
+                message_id=f"{routing_key}:{result.order_id}",
+                type=routing_key,
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ),
+            routing_key=routing_key,
+            mandatory=True,
+            timeout=5,
+        )
+        logger.info("Published %s for order %s", routing_key, result.order_id)
 
 
 async def consume_orders():

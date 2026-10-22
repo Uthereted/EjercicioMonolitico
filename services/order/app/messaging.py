@@ -21,6 +21,14 @@ class DeliveryStatusUpdate(BaseModel):
     status: Literal["Delivered"]
 
 
+class PaymentResultEvent(BaseModel):
+    order_id: int = Field(gt=0)
+    client_id: int = Field(gt=0)
+    amount: int = Field(gt=0)
+    accepted: bool
+    reason: str = "Payment rejected"
+
+
 async def handle_delivery_update(event):
     from .routers import main_router
     from .sql import schemas
@@ -60,6 +68,63 @@ async def consume_delivery_updates():
                             await message.ack()
         except Exception:
             logger.exception("Delivery consumer unavailable; retrying in five seconds")
+            await asyncio.sleep(5)
+
+
+async def handle_payment_result(event: PaymentResultEvent):
+    """Apply a payment.approved/payment.rejected event idempotently."""
+    from . import workflow
+    from .sql import schemas
+
+    async with database.SessionLocal() as db:
+        order = await db.get(models.Order, event.order_id)
+        if order is None:
+            raise ValueError(f"Order {event.order_id} does not exist")
+        if order.client_id != event.client_id or order.total_price != event.amount:
+            raise ValueError("Payment details do not match the order")
+        if (order.payment_completed and not event.accepted) or (order.status == "Rejected" and event.accepted):
+            raise ValueError("Conflicting payment result")
+        if not order.payment_completed and order.status != "Rejected":
+            order.payment_completed = event.accepted
+            order.status = "Accepted" if event.accepted else "Rejected"
+            order.integration_error = None if event.accepted else event.reason
+            await db.commit()
+            await db.refresh(order)
+        if event.accepted:
+            await workflow.resume_order(db, order)
+
+
+async def consume_payment_results():
+    """Consume payment.approved and payment.rejected events from RabbitMQ."""
+    while True:
+        try:
+            connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
+            async with connection:
+                channel = await connection.channel()
+                await channel.set_qos(prefetch_count=1)
+                exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
+                queue = await channel.declare_queue("order.payment.events", durable=True)
+                await queue.bind(exchange, routing_key="payment.approved")
+                await queue.bind(exchange, routing_key="payment.rejected")
+                async with queue.iterator() as messages:
+                    async for message in messages:
+                        try:
+                            event = PaymentResultEvent.model_validate_json(message.body)
+                            expected = "payment.approved" if event.accepted else "payment.rejected"
+                            if message.routing_key != expected:
+                                raise ValueError("Payment event routing key does not match its result")
+                            await handle_payment_result(event)
+                        except (ValidationError, ValueError):
+                            logger.exception("Invalid/conflicting payment result; rejecting")
+                            await message.reject(requeue=False)
+                        except Exception:
+                            logger.exception("Payment result processing pending; retrying")
+                            await asyncio.sleep(5)
+                            await message.nack(requeue=True)
+                        else:
+                            await message.ack()
+        except Exception:
+            logger.exception("Payment result consumer unavailable; retrying in five seconds")
             await asyncio.sleep(5)
 
 
