@@ -1,14 +1,13 @@
 import asyncio
-import logging.config
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 
 from fastapi import FastAPI
+from manufacturing_chassis import configure_logging, create_health_router
 from app import messaging
 from app.routers import payment_router
 from app.sql import database, models
 
-logging.config.fileConfig(Path(__file__).with_name("logging.ini"))
+configure_logging("payment-service")
 
 
 @asynccontextmanager
@@ -28,4 +27,5 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Payment Service", docs_url="/payment", redoc_url=None, lifespan=lifespan)
+app.include_router(create_health_router("payment-service"))
 app.include_router(payment_router.router)

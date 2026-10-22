@@ -4,7 +4,9 @@ services:
 
   order-service:
 
-    build: .
+    build:
+      context: ../..
+      dockerfile: services/order/Dockerfile
 
     ports:
       - "13001:8000"

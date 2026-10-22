@@ -20,7 +20,9 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    build: services/order
+    build:
+      context: .
+      dockerfile: services/order/Dockerfile
     ports:
         - "13001:8000"
     volumes:
@@ -77,8 +79,8 @@ services:
       rabbitmq:
         condition: service_healthy
     build:
-      context: services/payment
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/payment/Dockerfile
     ports:
       - '13006:8000'
     volumes:

@@ -14,6 +14,8 @@ services/
 ├── order/        # Pedidos y piezas
 └── payment/      # Pagos
 haproxy/          # Configuración del gateway
+chassis/          # Paquete compartido: logs y health check
+deliverables/     # ZIP del chasis para la entrega
 compose.yml       # Ejecución conjunta
 dot_env_example   # Variables de entorno de ejemplo
 ```
@@ -28,6 +30,42 @@ su volumen en `services/order/db_volume/` y documentación en `services/order/do
 Clientes utiliza `db_volume/`, entregas `delivery_volume/` y pagos
 `payment_db_volume/`. Las bases se crean automáticamente al arrancar si no existen.
 
+## Chasis compartido
+
+Pedidos y pagos utilizan dos funciones del chasis: configuración común de logs
+y un endpoint `GET /health` que identifica el servicio. Cada microservicio importa
+las funciones que necesita; clientes, máquinas y entregas mantienen su código actual.
+
+La [documentación del chasis](chassis/README.md) contiene el enlace del repositorio,
+la descripción de las funciones y la tabla de uso por microservicio para la entrega.
+El ZIP se encuentra en `deliverables/chassis.zip` y se regenera desde la raíz con:
+
+```bash
+python scripts/package_chassis.py
+```
+
+Para comprobarlo después de reconstruir y arrancar los servicios:
+
+```bash
+curl http://localhost:13001/health
+curl http://localhost:13006/health
+```
+
+El primer endpoint devuelve `{"status":"ok","service":"order-service"}` y el
+segundo `{"status":"ok","service":"payment-service"}`. No comprueban la base
+de datos ni RabbitMQ. El `/health` del gateway en el puerto 8080 es independiente.
+
+Pruebas del chasis y su integración (con el paquete y las dependencias instalados):
+
+```bash
+python -m unittest discover -s chassis/tests -v
+python tests/test_chassis_integration.py
+```
+
+Antes de entregar, subir los cambios a GitHub y conceder acceso al profesor si el
+repositorio es privado. Si se exige un repositorio separado para el chasis, usar
+el contenido del ZIP como raíz de ese repositorio y actualizar el enlace de su README.
+
 ## Dependencias e imágenes Docker
 
 Cada microservicio instala las librerías de su propio `requirements.txt`.
@@ -36,8 +74,11 @@ imagen Python o las instrucciones anteriores del Dockerfile. Cambiar únicamente
 el código no requiere reinstalar las dependencias. Evitar `--no-cache` y conservar
 la caché de Docker permite aprovechar esta reutilización.
 
-`coloredlogs` se conserva en pedidos y pagos porque su configuración de logs
-lo utiliza. `email-validator` es necesario para los correos de clientes.
+Pedidos y pagos usan el paquete local `chassis/` para configurar los logs y
+ofrecer `GET /health`. Sus requisitos instalan `../../chassis`, por lo que la
+instalación local debe ejecutarse desde la carpeta de cada servicio.
+Sus imágenes Docker se construyen desde la raíz para incluir ese paquete.
+`email-validator` es necesario para los correos de clientes.
 `SQLAlchemy[asyncio]` incluye `greenlet`, necesario para el acceso asíncrono
 a las bases de datos.
 

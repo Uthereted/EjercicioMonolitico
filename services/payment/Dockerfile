@@ -5,8 +5,10 @@ USER root
 
 # Update pip, copy requirements file and install dependencies
 RUN pip install --no-cache-dir --upgrade pip;
-COPY requirements.txt /requirements.txt
-RUN pip install -r /requirements.txt
+WORKDIR /build/services/payment
+COPY chassis /build/chassis
+COPY services/payment/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # We will be working on this folder
 WORKDIR /home/pyuser/code
@@ -16,14 +18,14 @@ RUN useradd -u 1000 -d /home/pyuser -m pyuser && \
     chown -R pyuser:pyuser /home/pyuser
 
 # Copy the entrypoint script (executed when the container starts) and add execution permissions
-COPY entrypoint.sh /home/pyuser/code/entrypoint.sh
+COPY services/payment/entrypoint.sh /home/pyuser/code/entrypoint.sh
 RUN chmod +x /home/pyuser/code/entrypoint.sh
 
 # Switch user so container is run as non-root user
 USER 1000
 
 # Copy the app to the container
-COPY app /home/pyuser/code/app
+COPY services/payment/app /home/pyuser/code/app
 
 # Run the application
 ENTRYPOINT ["./entrypoint.sh"]
