@@ -10,14 +10,6 @@ router = APIRouter()
 security_basic = HTTPBasic()
 
 
-@router.post("/clients", response_model=schemas.ClientResponse, status_code=status.HTTP_201_CREATED)
-async def create_client(
-        client: schemas.ClientCreate,
-        db: AsyncSession = Depends(get_db)
-):
-    return await crud.create_client(db, client)
-
-
 @router.get("/auth/public-key", tags=["Auth"])
 async def get_public_key():
     """Devuelve la clave pública RSA actual en formato PEM."""
@@ -44,6 +36,8 @@ async def login_basic_auth(
         "email": user.email,
         "roles": [r.name for r in user.roles]
     }
+    client = await crud.get_client_by_email(db, user.email)
+    token_payload["client_id"] = client.id if client else None
     jwt_token = crypto.create_jwt_token(token_payload)
     return schemas.TokenResponse(access_token=jwt_token)
 
@@ -54,6 +48,8 @@ async def register_user(user_data: schemas.UserCreate, db: AsyncSession = Depend
     existing_user = await crud.get_user_by_username(db, user_data.username)
     if existing_user:
         raise HTTPException(status_code=400, detail="El usuario ya existe")
+    if user_data.roles != ["user"]:
+        raise HTTPException(status_code=400, detail="El registro público solo permite el rol user")
     return await crud.create_user(db, user_data)
 
 

@@ -128,6 +128,38 @@ docker compose -f services/order/compose.yml up -d --build
 
 ## API Gateway
 
+### Autenticación tras el merge
+
+Clientes conserva una única ruta `POST /clients` y añade `POST /auth/register`,
+`GET /auth/token` (HTTP Basic) y `GET /auth/public-key`. En el gateway son
+`/api/auth/register`, `/api/auth/token` y `/api/auth/public-key`.
+El login devuelve un JWT RS256 válido durante una hora. Para las operaciones
+protegidas, enviar `Authorization: Bearer <access_token>`: crear/listar pedidos
+y consultar/ingresar/cobrar saldo. Las demás rutas mantienen su comportamiento
+anterior; esta integración no añade autenticación a todas las APIs.
+
+Para las pruebas locales se conserva el usuario inicial `admin` con contraseña
+`admin123`. El registro público solo crea usuarios con rol `user`. Los usuarios
+normales se asocian al cliente con su mismo email al obtener el token; los IDs
+de las tablas de usuarios y clientes son independientes. Esto es autenticación
+de desarrollo: el registro no verifica la propiedad del correo.
+
+Clientes genera la clave de firma al arrancar y publica `client.cert.updated`.
+Pedidos y pagos reciben ese aviso en colas exclusivas separadas de `order.events`
+y actualizan la clave pública; también la recuperan al detectar una firma antigua.
+Reiniciar clientes invalida los tokens anteriores: hay que iniciar sesión otra vez.
+El consumidor dedicado de `order.events` sigue siendo el único que procesa
+los eventos de piezas y entregas.
+
+El gateway también escucha en `https://localhost:8443` con el certificado local
+de `haproxy/gateway.pem`. Para pruebas HTTP se mantiene el puerto 8080.
+
+Las pruebas `tests/test_auth_integration.py` y `tests/test_workflow_integration.py`
+usan el gateway indicado por `API_BASE_URL` (por defecto `http://localhost:8080`).
+La segunda obtiene primero un token; permite cambiar las credenciales con
+`TEST_AUTH_USERNAME` y `TEST_AUTH_PASSWORD`. `tests/test_auth_verifier.py` se
+ejecuta por separado en los entornos de pedidos y pagos.
+
 HAProxy permite acceder a los cinco servicios mediante **http://localhost:8080**.
 Los puertos individuales de la tabla se conservan para depuración. Las llamadas
 internas entre servicios siguen usando la red Docker.

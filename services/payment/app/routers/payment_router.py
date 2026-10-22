@@ -53,9 +53,8 @@ def _check_client_ownership(client_id: int, token_payload: dict):
     if token_payload.get("service") is True or "admin" in token_payload.get("roles", []):
         return
 
-    # Si es un usuario regular, su 'sub' debe coincidir con el client_id de la ruta
-    token_sub = str(token_payload.get("sub"))
-    if token_sub != str(client_id):
+    # User IDs and client IDs belong to separate tables.
+    if token_payload.get("client_id") != client_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: No tienes permisos para acceder o modificar los fondos de este cliente"

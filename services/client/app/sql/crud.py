@@ -14,7 +14,7 @@ async def seed_initial_data(db: AsyncSession):
 
     # 2. Crear usuario 'admin' inicial
     result = await db.execute(select(models.User).where(models.User.username == "admin"))
-    if not result.scalar_one_or_none():
+    if not result.unique().scalar_one_or_none():
         admin_role_res = await db.execute(select(models.Role).where(models.Role.name == "admin"))
         admin_role = admin_role_res.scalar_one()
 
@@ -29,7 +29,7 @@ async def seed_initial_data(db: AsyncSession):
 
 async def get_user_by_username(db: AsyncSession, username: str):
     result = await db.execute(select(models.User).where(models.User.username == username))
-    return result.scalar_one_or_none()
+    return result.unique().scalar_one_or_none()
 
 
 async def create_user(db: AsyncSession, user_schema: schemas.UserCreate):
@@ -62,6 +62,10 @@ async def create_client(db: AsyncSession, client: schemas.ClientCreate):
 
 async def get_client(db: AsyncSession, client_id: int):
     return await db.get(models.Client, client_id)
+
+
+async def get_client_by_email(db: AsyncSession, email: str):
+    return await db.scalar(select(models.Client).where(models.Client.email == email))
 
 
 async def get_clients(db: AsyncSession):

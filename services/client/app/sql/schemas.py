@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class RoleSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -11,7 +11,7 @@ class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
-    roles: Optional[List[str]] = ["user"]
+    roles: List[str] = Field(default_factory=lambda: ["user"])
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

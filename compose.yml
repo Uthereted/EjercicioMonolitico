@@ -68,6 +68,9 @@ services:
     restart: on-failure
 
   client_service:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     build: services/client
     container_name: client_service
     ports:
@@ -77,6 +80,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:////volume/client.db
+      - RABBITMQ_URL=amqp://manufacturing:manufacturing@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=manufacturing.events
     restart: on-failure
 
   paymentservice:

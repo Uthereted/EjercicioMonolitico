@@ -19,6 +19,13 @@ def run():
             response.raise_for_status()
             return response.json()
 
+        token = client.get("/api/auth/token", auth=(
+            os.getenv("TEST_AUTH_USERNAME", "admin"),
+            os.getenv("TEST_AUTH_PASSWORD", "admin123"),
+        ))
+        token.raise_for_status()
+        client.headers["Authorization"] = f"Bearer {token.json()['access_token']}"
+
         customer = request("POST", "/api/clients", json={
             "name": "Prueba eventos machine/order",
             "email": f"events-{uuid.uuid4().hex}@example.org",

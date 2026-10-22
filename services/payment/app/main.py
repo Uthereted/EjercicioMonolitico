@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from my_chassis import configure_logging, create_health_router
 from app import messaging
+from app.auth_verifier import fetch_public_key, listen_for_cert_updates
 from app.routers import payment_router
 from app.sql import database, models
 
@@ -16,13 +17,17 @@ async def lifespan(app):
         await conn.run_sync(models.Base.metadata.create_all)
         for index in models.Transaction.__table__.indexes:
             await conn.run_sync(lambda connection, index=index: index.create(connection, checkfirst=True))
-    consumer = asyncio.create_task(messaging.consume_orders())
+    await fetch_public_key()
+    tasks = [asyncio.create_task(messaging.consume_orders()),
+             asyncio.create_task(listen_for_cert_updates())]
     try:
         yield
     finally:
-        consumer.cancel()
-        with suppress(asyncio.CancelledError):
-            await consumer
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
         await database.engine.dispose()
 
 

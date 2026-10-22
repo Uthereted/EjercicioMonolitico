@@ -29,7 +29,7 @@ class OrderMessagingTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(workflow, "validate_client", new=AsyncMock()):
             order = await main_router.create_order(schemas.OrderPost(
                 client_id=1, number_of_pieces=2, address="Madrid",
-            ), db)
+            ), db, token_payload={"roles": ["admin"]})
         return order
 
     async def test_creation_waits_for_publication_and_payment(self):

@@ -22,6 +22,8 @@ async def require_order(db, order_id):
 async def create_order(order_schema: schemas.OrderPost,
                        db: AsyncSession = Depends(get_db),
                        token_payload: dict = Depends(verify_jwt)):
+    if "admin" not in token_payload.get("roles", []) and token_payload.get("client_id") != order_schema.client_id:
+        raise HTTPException(403, "Forbidden: el pedido debe pertenecer a tu cliente")
     await workflow.validate_client(order_schema.client_id)
     order = models.Order(
         **order_schema.model_dump(), unit_price=workflow.UNIT_PRICE,

@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from app.routers import clients_router
 from app.sql import database, models, crud
@@ -14,10 +15,14 @@ async def lifespan(app: FastAPI):
         await crud.seed_initial_data(db)
 
     crypto.generate_rsa_keys()
-    await messaging.notify_cert_updated()
-
-    yield
-    await database.engine.dispose()
+    notification = asyncio.create_task(messaging.notify_cert_updated())
+    try:
+        yield
+    finally:
+        notification.cancel()
+        with suppress(asyncio.CancelledError):
+            await notification
+        await database.engine.dispose()
 
 
 app = FastAPI(
