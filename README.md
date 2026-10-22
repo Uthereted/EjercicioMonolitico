@@ -55,9 +55,9 @@ El primer endpoint devuelve `{"status":"ok","service":"order-service"}` y el
 segundo `{"status":"ok","service":"payment-service"}`. No comprueban la base
 de datos ni RabbitMQ. El `/health` del gateway en el puerto 8080 es independiente.
 
-La dependencia está fijada a un commit del chasis para que todos los equipos
-instalen la misma versión. Para actualizarla, subir los cambios del chasis,
-cambiar su commit en ambos `requirements.txt` y reconstruir pedidos y pagos.
+La dependencia utiliza la rama `main` del chasis. Después de subir cambios al
+chasis, ejecutar `docker compose build --no-cache order-service paymentservice`
+y `docker compose up -d order-service paymentservice` para reinstalarlo.
 
 ## Dependencias e imágenes Docker
 
