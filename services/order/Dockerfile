@@ -5,8 +5,9 @@ USER root
 
 # Update pip, copy requirements file and install dependencies
 RUN pip install --no-cache-dir --upgrade pip;
-WORKDIR /build/services/order
-COPY chassis /build/chassis
+WORKDIR /build/EjercicioMonolitico/services/order
+COPY --from=chassis /setup.py /build/chasis_homework/setup.py
+COPY --from=chassis /my_chassis /build/chasis_homework/my_chassis
 COPY services/order/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
-from manufacturing_chassis import configure_logging, create_health_router
+from my_chassis import configure_logging, create_health_router
 from app import messaging, workflow
 from app.routers import main_router
 from app.sql import database, migrations, models

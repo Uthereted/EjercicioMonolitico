@@ -14,8 +14,6 @@ services/
 ├── order/        # Pedidos y piezas
 └── payment/      # Pagos
 haproxy/          # Configuración del gateway
-chassis/          # Paquete compartido: logs y health check
-deliverables/     # ZIP del chasis para la entrega
 compose.yml       # Ejecución conjunta
 dot_env_example   # Variables de entorno de ejemplo
 ```
@@ -36,13 +34,20 @@ Pedidos y pagos utilizan dos funciones del chasis: configuración común de logs
 y un endpoint `GET /health` que identifica el servicio. Cada microservicio importa
 las funciones que necesita; clientes, máquinas y entregas mantienen su código actual.
 
-La [documentación del chasis](chassis/README.md) contiene el enlace del repositorio,
-la descripción de las funciones y la tabla de uso por microservicio para la entrega.
-El ZIP se encuentra en `deliverables/chassis.zip` y se regenera desde la raíz con:
+El chasis vive en un repositorio independiente:
+[chasis_homework](https://github.com/Uthereted/chasis_homework).
+Debe estar clonado junto a este proyecto:
 
-```bash
-python scripts/package_chassis.py
+```text
+GitHub/
+├── chasis_homework/       # Paquete my_chassis: logs y health
+└── EjercicioMonolitico/   # Microservicios que lo importan
 ```
+
+Pedidos y pagos importan `configure_logging` y `create_health_router` desde
+`my_chassis`. No hace falta arrancar una aplicación de chasis: es una librería
+instalada en cada servicio. El repositorio separado contiene las funciones,
+la configuración de instalación y un README de uso.
 
 Para comprobarlo después de reconstruir y arrancar los servicios:
 
@@ -55,16 +60,8 @@ El primer endpoint devuelve `{"status":"ok","service":"order-service"}` y el
 segundo `{"status":"ok","service":"payment-service"}`. No comprueban la base
 de datos ni RabbitMQ. El `/health` del gateway en el puerto 8080 es independiente.
 
-Pruebas del chasis y su integración (con el paquete y las dependencias instalados):
-
-```bash
-python -m unittest discover -s chassis/tests -v
-python tests/test_chassis_integration.py
-```
-
-Antes de entregar, subir los cambios a GitHub y conceder acceso al profesor si el
-repositorio es privado. Si se exige un repositorio separado para el chasis, usar
-el contenido del ZIP como raíz de ese repositorio y actualizar el enlace de su README.
+Si se modifica el chasis, reconstruir pedidos y pagos para instalar la nueva
+versión: `docker compose up -d --build order-service paymentservice`.
 
 ## Dependencias e imágenes Docker
 
@@ -74,10 +71,11 @@ imagen Python o las instrucciones anteriores del Dockerfile. Cambiar únicamente
 el código no requiere reinstalar las dependencias. Evitar `--no-cache` y conservar
 la caché de Docker permite aprovechar esta reutilización.
 
-Pedidos y pagos usan el paquete local `chassis/` para configurar los logs y
-ofrecer `GET /health`. Sus requisitos instalan `../../chassis`, por lo que la
+Pedidos y pagos usan el paquete del repositorio vecino `chasis_homework/` para
+configurar los logs y ofrecer `GET /health`. Sus requisitos instalan
+`../../../chasis_homework`, por lo que la
 instalación local debe ejecutarse desde la carpeta de cada servicio.
-Sus imágenes Docker se construyen desde la raíz para incluir ese paquete.
+Docker Compose lo pasa como contexto adicional `chassis` al construir sus imágenes.
 `email-validator` es necesario para los correos de clientes.
 `SQLAlchemy[asyncio]` incluye `greenlet`, necesario para el acceso asíncrono
 a las bases de datos.
