@@ -54,12 +54,17 @@ services:
     restart: on-failure
 
   machineservice:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     build: services/machine
     ports:
       - '13002:8000'
     environment:
       PYTHONUNBUFFERED: 1
       ORDERS_SERVICE_URL: http://order-service:8000
+      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
   client_service:

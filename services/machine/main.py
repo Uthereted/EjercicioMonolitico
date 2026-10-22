@@ -1,15 +1,21 @@
+import asyncio
 from typing import List
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Depends, status
 from app.dependencies import get_machine, stop_machine
 from app.async_machine import Machine
+from app.messaging import consume_manufacturing_requests
 
 @asynccontextmanager
 async def lifespan(app):
-    await get_machine()
+    machine = await get_machine()
+    consumer = asyncio.create_task(consume_manufacturing_requests(machine))
     try:
         yield
     finally:
+        consumer.cancel()
+        with suppress(asyncio.CancelledError):
+            await consumer
         await stop_machine()
 
 
