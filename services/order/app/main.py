@@ -16,9 +16,7 @@ async def lifespan(app):
         await conn.run_sync(models.Base.metadata.create_all)
         await conn.run_sync(migrations.upgrade)
     tasks = [asyncio.create_task(messaging.publish_pending_events()),
-             #asyncio.create_task(messaging.consume_delivery_updates()),
-             asyncio.create_task(messaging.consume_events()),
-
+             asyncio.create_task(messaging.consume_delivery_updates()),
              asyncio.create_task(messaging.consume_payment_results()),
              asyncio.create_task(workflow.retry_pending_orders())]
     try:
