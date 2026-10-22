@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.sql import crud, models, schemas
 from app import workflow
+from app.auth_verifier import verify_jwt
 
 router = APIRouter()
 
@@ -19,7 +20,8 @@ async def require_order(db, order_id):
 
 @router.post("/order", response_model=schemas.Order, status_code=202, tags=["Order"])
 async def create_order(order_schema: schemas.OrderPost,
-                       db: AsyncSession = Depends(get_db)):
+                       db: AsyncSession = Depends(get_db),
+                       token_payload: dict = Depends(verify_jwt)):
     await workflow.validate_client(order_schema.client_id)
     order = models.Order(
         **order_schema.model_dump(), unit_price=workflow.UNIT_PRICE,
@@ -36,7 +38,7 @@ async def create_order(order_schema: schemas.OrderPost,
 
 
 @router.get("/order", response_model=List[schemas.Order], tags=["Order"])
-async def get_order_list(db: AsyncSession = Depends(get_db)):
+async def get_order_list(db: AsyncSession = Depends(get_db), token_payload: dict = Depends(verify_jwt)):
     return await crud.get_order_list(db)
 
 

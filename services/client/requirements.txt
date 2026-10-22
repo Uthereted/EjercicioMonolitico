@@ -5,3 +5,6 @@ SQLAlchemy[asyncio]~=2.0
 aiosqlite~=0.20
 email-validator
 aio-pika~=9.4
+PyJWT[crypto]~=2.9
+bcrypt~=4.1
+cryptography~=42.0
