@@ -79,14 +79,26 @@ async def resume_order(db, order):
             finished = len(pieces) == order.number_of_pieces and all(
                 piece.status == "Manufactured" for piece in pieces
             )
-            if finished and order.delivery_id is not None:
+            if (
+                    finished
+                    and order.delivery_id is not None
+                    and not order.delivery_ready_published
+            ):
                 try:
-                    response = await client.patch(
-                        f"{DELIVERY_URL}/deliveries/delivery/{order.delivery_id}/status",
-                        json={"status": "Ready"},
+                    await messaging.publish_event(
+                        "order.delivery.ready",
+                        "delivery.events",
+                        {
+                            "order_id": order.id,
+                            "delivery_id": order.delivery_id,
+                            "status": "Ready",
+                        },
+                        message_id=f"order.delivery.ready:{order.id}",
                     )
-                    response.raise_for_status()
-                except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+                    order.delivery_ready_published = True
+                    await db.commit()
+                    await db.refresh(order)
+                except Exception as exc:
                     errors.append(f"Delivery readiness pending: {exc}")
 
             if errors:

@@ -33,6 +33,7 @@ class Order(BaseModel):
     manufacturing_requested = Column(Boolean, nullable=False, default=False, server_default="0")
     delivery_id = Column(Integer, nullable=True)
     integration_error = Column(TEXT, nullable=True)
+    delivery_ready_published = Column(Boolean, nullable=False, default=False)
 
 
 class Piece(BaseModel):

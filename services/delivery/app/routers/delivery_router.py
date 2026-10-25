@@ -85,7 +85,19 @@ async def remove_delivery(
 
     return delivery
 
+@router.patch(
+    "/delivery/{delivery_id}/status",
+    response_model=schemas.Delivery,
+    summary="Update delivery state and notify the order",
+)
+async def update_delivery_status(
+    delivery_id: int,
+    update: schemas.DeliveryStatusUpdate,
+    db: AsyncSession = Depends(dependencies.get_db),
+):
+    return await workflow.set_delivery_status(db, delivery_id, update)
 
+'''
 @router.patch("/delivery/{delivery_id}/status", response_model=schemas.Delivery,
               summary="Update delivery state and notify the order")
 async def update_delivery_status(delivery_id: int, update: schemas.DeliveryStatusUpdate,
@@ -108,3 +120,4 @@ async def update_delivery_status(delivery_id: int, update: schemas.DeliveryStatu
     await db.refresh(delivery)
     await workflow.notify_order(db, delivery)
     return delivery
+'''

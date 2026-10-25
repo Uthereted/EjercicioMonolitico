@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from .routers import delivery_router
 from .sql import models
 from .sql import database
-from . import workflow
+from . import workflow, messaging
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,13 +13,18 @@ async def lifespan(app: FastAPI):
         await connection.run_sync(models.Base.metadata.create_all)
         await connection.run_sync(workflow.upgrade)
 
+    consumer_task = asyncio.create_task(messaging.consume_delivery_events())
     retry_task = asyncio.create_task(workflow.retry_notifications())
+
     try:
         yield
+
     finally:
-        retry_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await retry_task
+        for task in (consumer_task, retry_task):
+            task.cancel()
+        for task in (consumer_task, retry_task):
+            with suppress(asyncio.CancelledError):
+                await task
         await database.engine.dispose()
 
 

@@ -3,8 +3,9 @@ import asyncio
 import logging
 import os
 from my_chassis.messaging import publish_json_event
+from fastapi import HTTPException
 from sqlalchemy import inspect, select, text
-from .sql import database, models
+from .sql import database, models, crud
 
 logger = logging.getLogger(__name__)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
@@ -52,3 +53,28 @@ async def retry_notifications():
                     await notify_order(db, delivery)
         except Exception:
             logger.exception("Delivery event retry failed; will retry later")
+
+
+async def set_delivery_status(db, delivery_id, update):
+    delivery = await crud.get_delivery(db, delivery_id)
+    if delivery is None:
+        raise HTTPException(404, "Delivery not found")
+
+    stages = {"Pending": 0, "Ready": 1, "Sent": 2, "Delivered": 3}
+    current = stages.get(delivery.status, 0)
+    target = stages[update.status]
+
+    if target < current:
+        return delivery
+
+    if current == 0 and target > 1:
+        raise HTTPException(409, "Manufacturing has not finished")
+
+    delivery.status = update.status
+    if update.tracking_number is not None:
+        delivery.tracking_number = update.tracking_number
+
+    await db.commit()
+    await db.refresh(delivery)
+    await notify_order(db, delivery)
+    return delivery

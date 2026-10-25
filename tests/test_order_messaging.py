@@ -221,13 +221,29 @@ class OrderMessagingTests(unittest.IsolatedAsyncioTestCase):
             order.manufacturing_requested = True
             order.delivery_id = 5
             await db.commit()
-        with patch.object(workflow.httpx, "AsyncClient") as client:
-            client.return_value.__aenter__.return_value.patch.return_value = MagicMock()
-            for piece_id in (1, 2):
-                for status in ("Manufacturing", "Manufactured", "Manufactured", "Manufacturing"):
-                    await messaging.handle_piece_update(messaging.PieceStatusUpdate(
-                        piece_id=piece_id, status=status,
-                    ))
+        with patch.object(messaging, "publish_event", new=AsyncMock()) as publish:
+            with patch.object(workflow.httpx, "AsyncClient") as client:
+                client.return_value.__aenter__.return_value.patch.return_value = MagicMock()
+
+                for piece_id in (1, 2):
+                    for status in ("Manufacturing", "Manufactured", "Manufactured", "Manufacturing"):
+                        await messaging.handle_piece_update(
+                            messaging.PieceStatusUpdate(
+                                piece_id=piece_id,
+                                status=status,
+                            )
+                        )
+
+            publish.assert_awaited_once_with(
+                "order.delivery.ready",
+                "delivery.events",
+                {
+                    "order_id": order.id,
+                    "delivery_id": 5,
+                    "status": "Ready",
+                },
+                message_id=f"order.delivery.ready:{order.id}",
+            )
         async with database.SessionLocal() as db:
             order = await db.get(models.Order, order.id)
             self.assertEqual(order.status, "ReadyForDelivery")
@@ -265,6 +281,85 @@ class OrderMessagingTests(unittest.IsolatedAsyncioTestCase):
             await messaging.process_order_event(message)
         message.nack.assert_awaited_once_with(requeue=True)
         message.ack.assert_not_awaited()
+
+    async def test_finished_order_publishes_delivery_ready_event_once(self):
+        async with database.SessionLocal() as db:
+            order = await self.create_order(db)
+            order.payment_completed = True
+            order.delivery_id = 5
+
+            for piece in await workflow.pieces_for_order(db, order.id):
+                piece.status = "Manufactured"
+
+            await db.commit()
+
+            with patch.object(messaging, "publish_event", new=AsyncMock()) as publish:
+                with patch.object(workflow.httpx, "AsyncClient") as client:
+                    client.return_value.__aenter__.return_value.patch.return_value = MagicMock()
+
+                    await workflow.resume_order(db, order)
+                    await workflow.resume_order(db, order)
+
+                ready_calls = [
+                    call for call in publish.await_args_list
+                    if call.args[0] == "order.delivery.ready"
+                ]
+
+                self.assertEqual(len(ready_calls), 1)
+                self.assertEqual(
+                    ready_calls[0].args,
+                    (
+                        "order.delivery.ready",
+                        "delivery.events",
+                        {
+                            "order_id": order.id,
+                            "delivery_id": 5,
+                            "status": "Ready",
+                        },
+                    ),
+                )
+
+            self.assertTrue(order.delivery_ready_published)
+
+    async def test_failed_delivery_ready_publication_can_be_retried(self):
+        async with database.SessionLocal() as db:
+            order = await self.create_order(db)
+            order.payment_completed = True
+            order.delivery_id = 5
+
+            for piece in await workflow.pieces_for_order(db, order.id):
+                piece.status = "Manufactured"
+
+            await db.commit()
+
+            with patch.object(
+                messaging,
+                "publish_event",
+                new=AsyncMock(side_effect=RuntimeError("RabbitMQ unavailable")),
+            ) as publish:
+                await workflow.resume_order(db, order)
+
+                self.assertFalse(order.delivery_ready_published)
+                self.assertEqual(publish.await_count, 1)
+
+            with patch.object(
+                messaging,
+                "publish_event",
+                new=AsyncMock(),
+            ) as publish:
+                await workflow.resume_order(db, order)
+
+                self.assertTrue(order.delivery_ready_published)
+                publish.assert_awaited_once_with(
+                    "order.delivery.ready",
+                    "delivery.events",
+                    {
+                        "order_id": order.id,
+                        "delivery_id": 5,
+                        "status": "Ready",
+                    },
+                    message_id=f"order.delivery.ready:{order.id}",
+                )
 
 
 if __name__ == "__main__":

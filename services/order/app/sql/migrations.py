@@ -14,6 +14,7 @@ def upgrade(connection):
         "manufacturing_requested": "BOOLEAN NOT NULL DEFAULT 0",
         "delivery_id": "INTEGER",
         "integration_error": "TEXT",
+        "delivery_ready_published": "BOOLEAN NOT NULL DEFAULT 0",
     }
     for name, definition in additions.items():
         if name not in columns:
