@@ -9,7 +9,7 @@ Dockerfile and `requirements.txt`.
 ```bash
 git clone <repository-url>
 cd EjercicioMonolitico
-cp dot_env_example .env        # PowerShell: Copy-Item dot_env_example .env
+cp dot_env_example .env
 docker compose up -d --build
 curl http://localhost:8080/health
 ```
