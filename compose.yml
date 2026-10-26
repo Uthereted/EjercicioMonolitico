@@ -39,6 +39,7 @@ services:
     restart: on-failure
 
   delivery:
+    user: "0:0"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -96,6 +97,7 @@ services:
     restart: on-failure
 
   paymentservice:
+    user: "0:0"
     depends_on:
       rabbitmq:
         condition: service_healthy
