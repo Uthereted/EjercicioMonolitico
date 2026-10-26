@@ -5,6 +5,7 @@ from typing import List
 from .. import dependencies
 from ..sql import crud, schemas
 from .. import workflow
+from ..auth_verifier import verify_jwt
 
 router = APIRouter(
     prefix="/deliveries",
@@ -27,6 +28,7 @@ async def health_check():
 async def create_delivery(
     delivery_schema: schemas.DeliveryPost,
     db: AsyncSession = Depends(dependencies.get_db),
+    token_payload: dict = Depends(verify_jwt)
 ):
     """Create a delivery."""
     return await crud.create_delivery_from_schema(db, delivery_schema)
@@ -39,6 +41,7 @@ async def create_delivery(
 )
 async def get_delivery_list(
     db: AsyncSession = Depends(dependencies.get_db),
+    token_payload: dict = Depends(verify_jwt)
 ):
     """Retrieve all deliveries."""
     return await crud.get_delivery_list(db)
@@ -52,6 +55,7 @@ async def get_delivery_list(
 async def get_single_delivery(
     delivery_id: int,
     db: AsyncSession = Depends(dependencies.get_db),
+    token_payload: dict = Depends(verify_jwt)
 ):
     """Retrieve one delivery."""
     delivery = await crud.get_delivery(db, delivery_id)
@@ -73,6 +77,7 @@ async def get_single_delivery(
 async def remove_delivery(
     delivery_id: int,
     db: AsyncSession = Depends(dependencies.get_db),
+    token_payload: dict = Depends(verify_jwt)
 ):
     """Delete a delivery."""
     delivery = await crud.delete_delivery(db, delivery_id)
@@ -94,6 +99,7 @@ async def update_delivery_status(
     delivery_id: int,
     update: schemas.DeliveryStatusUpdate,
     db: AsyncSession = Depends(dependencies.get_db),
+    token_payload: dict = Depends(verify_jwt)
 ):
     return await workflow.set_delivery_status(db, delivery_id, update)
 

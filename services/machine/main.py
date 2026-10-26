@@ -5,9 +5,13 @@ from fastapi import FastAPI, Depends, status
 from app.dependencies import get_machine, stop_machine
 from app.async_machine import Machine
 from app.messaging import consume_manufacturing_requests
+from app.auth_verifier import fetch_public_key, listen_for_cert_updates, verify_jwt  # <-- Importar
 
 @asynccontextmanager
 async def lifespan(app):
+    await fetch_public_key()
+    cert_task = asyncio.create_task(listen_for_cert_updates())
+
     machine = await get_machine()
     consumer = asyncio.create_task(consume_manufacturing_requests(machine))
     try:
@@ -22,7 +26,9 @@ async def lifespan(app):
 app = FastAPI(title="Machine Service", version="1.0.0", lifespan=lifespan)
 
 @app.get("/machine/status")
-async def get_status(machine: Machine = Depends(get_machine)):
+async def get_status(machine: Machine = Depends(get_machine),
+                     token_payload: dict = Depends(verify_jwt)
+):
     working_piece_id = machine.working_piece['id'] if machine.working_piece else None
     return {
         "status": machine.status,
@@ -31,11 +37,11 @@ async def get_status(machine: Machine = Depends(get_machine)):
     }
 
 @app.post("/machine/queue", status_code=status.HTTP_201_CREATED)
-async def add_to_queue(piece_ids: List[int], machine: Machine = Depends(get_machine)):
+async def add_to_queue(piece_ids: List[int], machine: Machine = Depends(get_machine), token_payload: dict = Depends(verify_jwt)):
     await machine.add_pieces_to_queue(piece_ids)
     return {"detail": "Pieces added"}
 
 @app.delete("/machine/queue/{piece_id}")
-async def remove_from_queue(piece_id: int, machine: Machine = Depends(get_machine)):
+async def remove_from_queue(piece_id: int, machine: Machine = Depends(get_machine), token_payload: dict = Depends(verify_jwt)):
     removed = await machine.remove_piece_from_queue(piece_id)
     return {"removed": removed}
