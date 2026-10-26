@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import os
-from my_chassis.messaging import publish_json_event
+from .events import record_event
 from fastapi import HTTPException
 from sqlalchemy import inspect, select, text
 from .sql import database, models, crud
@@ -24,35 +24,10 @@ def upgrade(connection):
 
 
 async def notify_order(db, delivery):
-    if not delivery.workflow_managed or delivery.status != "Delivered" or delivery.order_notified:
-        return
-    try:
-        await publish_json_event(
-            RABBITMQ_URL, EXCHANGE, "delivery.status.update", "order.events",
-            {"delivery_id": delivery.id, "order_id": delivery.order_id, "status": "Delivered"},
-            f"delivery.status.update:{delivery.id}:Delivered",
-        )
-    except Exception:
-        logger.exception("Delivery event pending for delivery %s", delivery.id)
-        return
-    delivery.order_notified = True
-    await db.commit()
-    await db.refresh(delivery)
-
-
-async def retry_notifications():
-    while True:
-        await asyncio.sleep(RETRY_SECONDS)
-        try:
-            async with database.SessionLocal() as db:
-                deliveries = list((await db.scalars(select(models.Delivery).where(
-                    models.Delivery.status == "Delivered", models.Delivery.order_notified.is_(False),
-                    models.Delivery.workflow_managed.is_(True),
-                ))).all())
-                for delivery in deliveries:
-                    await notify_order(db, delivery)
-        except Exception:
-            logger.exception("Delivery event retry failed; will retry later")
+    if delivery.workflow_managed and delivery.status == "Delivered":
+        await record_event(db, "delivery.delivered", {
+            "delivery_id": delivery.id, "order_id": delivery.order_id, "client_id": delivery.client_id,
+        }, f"delivery.delivered:{delivery.id}")
 
 
 async def set_delivery_status(db, delivery_id, update):
@@ -74,7 +49,7 @@ async def set_delivery_status(db, delivery_id, update):
     if update.tracking_number is not None:
         delivery.tracking_number = update.tracking_number
 
+    await notify_order(db, delivery)
     await db.commit()
     await db.refresh(delivery)
-    await notify_order(db, delivery)
     return delivery

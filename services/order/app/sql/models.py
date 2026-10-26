@@ -42,3 +42,8 @@ class Piece(BaseModel):
     id = Column(Integer, primary_key=True)
     order_id = Column(Integer, ForeignKey("manufacturing_order.id"), nullable=False, index=True)
     status = Column(String(32), nullable=False, default="Queued")
+
+
+class KnownClient(Base):
+    __tablename__ = "known_client"
+    id = Column(Integer, primary_key=True)

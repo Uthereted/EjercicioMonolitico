@@ -1,28 +1,24 @@
-"""Announce signing key changes without publishing private key material."""
+"""Publish durable client facts and periodic public snapshots."""
 import asyncio
-import logging
-import os
+import hashlib
+from uuid import uuid4
+from sqlalchemy import select
+from . import crypto
+from .events import record_event
+from .sql import database, models
 
-import aio_pika
 
-logger = logging.getLogger(__name__)
-
-
-async def notify_cert_updated():
+async def publish_catalogue():
+    # Snapshots bootstrap new local projections without request/reply.
     while True:
-        try:
-            connection = await aio_pika.connect_robust(os.getenv(
-                "RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/"), timeout=5)
-            async with connection:
-                channel = await connection.channel(publisher_confirms=True)
-                exchange = await channel.declare_exchange(
-                    os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events"),
-                    aio_pika.ExchangeType.TOPIC, durable=True,
-                )
-                await exchange.publish(aio_pika.Message(body=b'{}', content_type="application/json",
-                                                       type="client.cert.updated"),
-                                       routing_key="client.cert.updated", mandatory=False, timeout=5)
-            return
-        except Exception:
-            logger.exception("Signing key announcement pending; retrying")
-            await asyncio.sleep(5)
+        async with database.SessionLocal() as db:
+            ids = list((await db.scalars(select(models.Client.id))).all())
+            epoch = uuid4().hex
+            await record_event(db, "clients.catalogue.published", {"client_ids": ids},
+                               f"clients.catalogue.published:{epoch}")
+            pem = crypto.get_public_key_pem()
+            fingerprint = hashlib.sha256(pem.encode()).hexdigest()
+            await record_event(db, "auth.signing-key.published", {"public_key": pem},
+                               f"auth.signing-key.published:{fingerprint}:{epoch}")
+            await db.commit()
+        await asyncio.sleep(5)

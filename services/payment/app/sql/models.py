@@ -54,3 +54,8 @@ class OrderPaymentResult(BaseModel):
     amount = Column(Integer, nullable=False)
     accepted = Column(Boolean, nullable=False)
     reason = Column(String(500), nullable=False)
+
+
+class KnownClient(Base):
+    __tablename__ = "known_client"
+    id = Column(Integer, primary_key=True)

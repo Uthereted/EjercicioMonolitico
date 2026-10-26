@@ -4,24 +4,28 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Depends, status
 from app.dependencies import get_machine, stop_machine
 from app.async_machine import Machine
-from app.messaging import consume_manufacturing_requests
-from app.auth_verifier import fetch_public_key, listen_for_cert_updates, verify_jwt
+from app import messaging, events
+from app.sql import database, models
+from app.auth_verifier import fetch_public_key, verify_jwt
 
 @asynccontextmanager
 async def lifespan(app):
+    async with database.engine.begin() as connection:
+        await connection.run_sync(models.Base.metadata.create_all)
     await fetch_public_key()
     machine = await get_machine()
-    cert_task = asyncio.create_task(listen_for_cert_updates())
-    consumer = asyncio.create_task(consume_manufacturing_requests(machine))
+    publisher = asyncio.create_task(events.publish_pending_events())
+    consumer = asyncio.create_task(events.consume_events("machine.domain", messaging.handle_event))
     try:
         yield
     finally:
-        for task in (consumer, cert_task):
+        for task in (consumer, publisher):
             task.cancel()
-        for task in (consumer, cert_task):
+        for task in (consumer, publisher):
             with suppress(asyncio.CancelledError):
                 await task
         await stop_machine()
+        await database.engine.dispose()
 
 
 app = FastAPI(title="Machine Service", version="1.0.0", lifespan=lifespan)

@@ -1,12 +1,11 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
-
 from fastapi import FastAPI
 from my_chassis import configure_logging, create_health_router
-from app import messaging, workflow
+from app import messaging, workflow, events
 from app.routers import main_router
 from app.sql import database, migrations, models
-from app.auth_verifier import fetch_public_key, listen_for_cert_updates
+from app.auth_verifier import fetch_public_key
 
 configure_logging("order-service")
 
@@ -16,12 +15,10 @@ async def lifespan(app):
     async with database.engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.create_all)
         await conn.run_sync(migrations.upgrade)
+    await workflow.bootstrap()
     await fetch_public_key()
-    tasks = [asyncio.create_task(messaging.publish_pending_events()),
-             asyncio.create_task(messaging.consume_order_events()),
-             asyncio.create_task(messaging.consume_payment_results()),
-             asyncio.create_task(workflow.retry_pending_orders()),
-             asyncio.create_task(listen_for_cert_updates())]
+    tasks = [asyncio.create_task(events.publish_pending_events()),
+             asyncio.create_task(events.consume_events("order.domain", messaging.handle_event))]
     try:
         yield
     finally:

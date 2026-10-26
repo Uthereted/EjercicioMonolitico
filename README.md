@@ -21,11 +21,11 @@ Gateway at **http://localhost:8080** (see [API Gateway](#api-gateway)).
 
 ```text
 services/
-├── client/       # Clients
-├── delivery/     # Deliveries
-├── machine/      # Machines and manufacturing queue
-├── order/        # Orders and pieces
-└── payment/      # Payments
+â”œâ”€â”€ client/       # Clients
+â”œâ”€â”€ delivery/     # Deliveries
+â”œâ”€â”€ machine/      # Machines and manufacturing queue
+â”œâ”€â”€ order/        # Orders and pieces
+â””â”€â”€ payment/      # Payments
 haproxy/          # Gateway configuration
 compose.yml       # Run everything together
 dot_env_example   # Example environment variables
@@ -52,13 +52,12 @@ The chassis gathers infrastructure utilities shared by the services:
 | --- | --- |
 | Logs and `GET /health` | Orders and payments |
 | Per-request database session (`create_db_dependency`) | Clients, deliveries, orders and payments |
-| Persistent JSON publishing to RabbitMQ (`publish_json_event`) | Orders, payments and deliveries |
-| JSON message construction (`create_json_message`) | Pending-event publisher of orders |
 
-JWT verification stays in this project, in orders and payments.
+JWT verification stays in the individual services in this project.
 The chassis contains no models, business rules or database commits.
-Publishing waits for the broker's confirmation and prepares the queue before
-sending; the services still handle retries and mark events as published.
+It also provides `publish_json_event` and `create_json_message`; the current
+transactional event flow uses each service's `app.events` module to keep its
+outbox/inbox in the same database transaction as its business state.
 
 The chassis lives in a separate repository:
 [chasis_homework](https://github.com/Uthereted/chasis_homework).
@@ -67,8 +66,8 @@ GitHub. You only need to clone this project; no local chassis folder is
 required.
 
 Orders and payments import `configure_logging` and `create_health_router` from
-`my_chassis`. Sessions are imported from `my_chassis.database` and publishers
-from `my_chassis.messaging`. There is no chassis application to start: it is a
+`my_chassis`. Sessions are imported from `my_chassis.database`.
+There is no chassis application to start: it is a
 library installed in each service. The separate repository contains the
 functions, the installation configuration and a usage README.
 
@@ -161,8 +160,8 @@ Other endpoints of the stack:
 
 | Component | URL | Credentials |
 | --- | --- | --- |
-| API Gateway (HTTP) | http://localhost:8080 | — |
-| API Gateway (HTTPS) | https://localhost:8443 | — |
+| API Gateway (HTTP) | http://localhost:8080 | â€” |
+| API Gateway (HTTPS) | https://localhost:8443 | â€” |
 | HAProxy stats | http://localhost:8404 | `admin` / `admin` |
 | RabbitMQ management | http://localhost:15672 | `manufacturing` / `manufacturing` |
 | RabbitMQ (AMQP) | `localhost:5672` | `manufacturing` / `manufacturing` |
@@ -183,24 +182,18 @@ behavior; this integration does not add authentication to every API.
 Machine and delivery validate RS256, issuer `manufacturing-client`, audience
 `manufacturing-services` and required claims `exp`, `iat`, `sub`. Missing or invalid
 tokens return 401; an unavailable signing key returns 503. They refresh cached
-keys after a signature failure and on the `client.cert.updated` RabbitMQ event.
+keys after a signature failure and on persisted `auth.signing-key.published` facts.
 
-Orders authenticates its background delivery-creation requests with its own JWT.
-Compose provides development defaults for `ORDER_SERVICE_AUTH_SECRET` and
-`PAYMENT_SERVICE_AUTH_SECRET`, so a fresh checkout can start without setting them.
-Override them in `.env` to use private credentials; generate each with
-`python -c "import secrets; print(secrets.token_urlsafe(32))"`. Orders and payments
-receive separate secrets, also configured in client/auth. For separate service
-launches, configure matching secrets in the corresponding processes.
-Orders calls `POST /auth/service-token` using HTTP Basic
-username `order-service` and that secret, then sends the returned Bearer token to
-delivery. No user token is stored for background retries. This endpoint refuses
-requests when the secret is absent and does not grant admin roles.
+Internal services now exchange domain facts only. There is no HTTP/RPC
+request/reply between services. Orders and payments validate clients using local
+catalogues maintained by client events. Each JWT consumer keeps a persistent
+public key received through signing-key publication events.
 
-Payments obtains its own token at the same endpoint with username `payment-service`
-and `PAYMENT_SERVICE_AUTH_SECRET` before checking that a client exists. The named
-order and payment service identities can read an individual client, but cannot
-create clients or list the directory.
+Newly created clients become visible in the other services asynchronously.
+A request that arrives before its catalogue update may return 404; retry shortly.
+Periodic client/public-key snapshots also bootstrap new or recovered databases.
+The optional service-token HTTP API is retained for external compatibility but
+is not used by the internal choreography.
 
 Users may create a client only for the email in their signed token, read that
 client, and list only their own client. Admins may create and read all clients.
@@ -244,13 +237,10 @@ linked to the client with the same email when the token is obtained; the IDs of
 the users and clients tables are independent. This is development-grade
 authentication: registration does not verify ownership of the email address.
 
-Clients generates the signing key on startup and publishes
-`client.cert.updated`. Orders and payments receive that notice on separate
-exclusive queues, distinct from `order.events`, and update the public key; they
-also fetch it again when they detect an old signature. Restarting clients
-invalidates the previous tokens: you must log in again.
-The dedicated `order.events` consumer remains the only one that processes
-piece and delivery events.
+Client generates its signing key on startup and periodically publishes its
+public key as a fact. Subscribers persist that key locally. Restarting client
+changes its signing key; existing access tokens then need renewal or a new login.
+Persistent opaque refresh sessions survive this change.
 
 The gateway also listens on `https://localhost:8443` with the local certificate
 from `haproxy/gateway.pem`. Port 8080 is kept for HTTP tests.
@@ -396,131 +386,72 @@ documentation of the original application. Their routes and diagrams do not
 necessarily represent the current architecture; to test orders, use the
 collection mentioned above.
 
-## RabbitMQ and the order.created event
+## Domain events and recovery
 
-Compose includes RabbitMQ with persistent storage and a management panel at
-http://localhost:15672 (development user and password: `manufacturing`).
-The AMQP port is `5672`. Orders, payments, machines and deliveries use
-`aio-pika`.
+All internal communication uses the durable topic exchange
+`manufacturing.events`. External API calls still enter through HAProxy.
+Publishers record facts about their own state; subscribers independently decide
+what to do. There are no internal command queues, RPC operations or reply queues.
 
-```text
-order-service -> manufacturing.events (topic)
-                  routing key: order.created
-                          -> payment.events -> paymentservice
+| Fact | Publisher | Subscribers and local reaction |
+| --- | --- | --- |
+| `client.created` / `clients.catalogue.published` | Client | Order/payment update their local client catalogues |
+| `auth.signing-key.published` | Client | JWT consumers persist the RSA public key |
+| `order.created` | Order | Payment decides and records the payment outcome |
+| `payment.approved` / `payment.rejected` | Payment | Order records the outcome |
+| `order.paid` | Order | Machine persists work; delivery independently creates a delivery |
+| `piece.manufacturing.started` / `piece.manufactured` | Machine | Order updates its local piece state |
+| `order.manufactured` | Order | Delivery independently makes the shipment ready |
+| `delivery.created` / `delivery.ready` / `delivery.delivered` | Delivery | Order updates its local view of delivery progress |
 
-paymentservice -> manufacturing.events (topic)
-                  routing keys: payment.approved / payment.rejected
-                          -> order.payment.events -> order-service
+Each service stores an `event_outbox` and `event_inbox` in its own SQLite
+database. State changes, derived facts and inbox identifiers commit atomically.
+The outbox publisher retries outages, uses persistent messages and broker
+confirmations. A crash between confirmation and marking an event published may
+produce a duplicate; subscribers persist event identifiers and process effects
+only once. Invalid facts are rejected; transient failures roll back and retry.
 
-delivery      -> manufacturing.events (topic)
-                  routing key: delivery.status.update
-                          -> order.events -> order-service
+The durable queues are `order.domain`, `payment.domain`,
+`delivery.domain` and `machine.domain`. Infrastructure provisions their
+bindings before publishing, so an offline subscriber can catch up later.
 
-order-service -> manufacturing.events (topic)
-                  routing key: machine.pieces.requested
-                          -> machine.events -> machineservice
+Machine has its own SQLite database on the `machine_data` volume. Both queued
+and interrupted work survive restarts. It never polls orders for recovery.
+Payment outcomes, including rejections, remain stable after duplicate events.
+Delivery creation is unique per workflow order and cannot regress after a late
+paid-order fact. Existing active orders are bridged to the new event stream on
+startup without charging them twice. Legacy API publication flags are retained
+for compatibility; the outbox is now the publication authority.
 
-machineservice -> manufacturing.events (topic)
-                  routing key: piece.status.update
-                          -> order.events -> order-service
-```
+To run the stack and regression tests:
 
-There is one durable application exchange and four durable queues:
-`payment.events` for payments, `order.payment.events` for payment results and
-`order.events` for delivery and piece notices to orders, and `machine.events`
-for manufacturing requests. A single `order.events` consumer tells both types
-apart by their routing key. Delivery creation and the change to `Ready` keep
-their current REST calls. Clients does not consume these events.
-
-After the payment is accepted, orders publishes `machine.pieces.requested` with
-`{order_id, piece_ids}`. It sets `manufacturing_requested=true` only after the
-broker's confirmation; failures stay pending for retry.
-Machines publishes `piece.status.update` with `{piece_id, status}`, first
-`Manufacturing` and then `Manufactured`, retrying until it receives
-confirmation. Orders saves each change before acknowledging the message.
-Duplicates do not roll back a finished piece. Machines avoids queuing again
-pieces already completed in the current process, even if the REST recovery
-still returns them while orders consumes its events. After a restart, it
-recovers from orders the paid pieces that are still pending.
-
-Deliveries publishes `delivery.status.update` only when it reaches
-`Delivered`, with `{delivery_id, order_id, status}`. Orders consumes
-`order.events`, checks that the delivery belongs to the order and applies the
-same payment and manufacturing validations as the REST update. It acknowledges
-the message after saving the `Delivered` status; processing failures are
-requeued and invalid messages are rejected. Receiving the same notice again
-does not change the result. `Ready` and `Sent` do not publish events.
-
-The message contains `{order_id, client_id, amount}`. The order itself stores
-`order_created_published`, which is only set after the broker's confirmation.
-This way publishing is retried if RabbitMQ fails, without an extra table.
-
-The container is configured in `compose.yml`. The `messaging.py` modules of
-orders and payments contain the RabbitMQ calls to publish and consume;
-Compose alone does not run that Python logic.
-
-Payments consumes `payment.events`, performs the charge and publishes
-`payment.approved` or `payment.rejected`, with
-`{order_id, client_id, amount, accepted, reason}`. It acknowledges
-`order.created` after the broker confirms the publication of the result; if
-that fails, it requeues the message with a five-second delay. Orders consumes
-`order.payment.events` and acknowledges the result after processing it.
-Charges and rejected results are stored per order so that a redelivery neither
-changes the result nor charges twice. Messages with a contradictory format or
-data are rejected. The payment result is no longer communicated over REST.
-Orders keeps the previous endpoint for compatibility, with the same validations
-as the consumer.
-
-To start the updated project:
-
-```bash
+```powershell
 docker compose up -d --build
-docker compose logs -f order-service paymentservice rabbitmq
-```
-
-Creating an order returns **202** with `PendingPayment`. Then query
-`GET /api/orders/{id}` to learn the outcome; insufficient balance leaves the
-order as `Rejected`, with the reason in `integration_error`. Client validation
-remains synchronous and returns 404 if the client does not exist.
-
-For development outside Docker, use the `RABBITMQ_URL` and `RABBITMQ_EXCHANGE`
-variables from the example file. The standalone orders Compose uses the host's
-RabbitMQ and requires payments and the rest of the services to be running.
-
-Tests for persistence, callbacks and duplicate charges (with the orders
-dependencies installed):
-
-```bash
 python tests/test_order_messaging.py
 python tests/test_payment_messaging.py
 python tests/test_delivery_messaging.py
 python tests/test_machine_messaging.py
-```
-
-Full test with all services running and `httpx` installed:
-
-```bash
+python tests/test_auth_integration.py
 python tests/test_workflow_integration.py
 ```
 
-It creates a test client, deposits 100 and orders two pieces; it checks the
-manufacturing statuses, the delivery by event and the final balance of 80. It
-keeps those records so you can review them. `API_BASE_URL` lets you change the
-gateway (default `http://localhost:8080`).
+The live tests create retained test records. The workflow test verifies a paid
+order reaches `Delivered` with the expected final balance.
 
 ## Order flow
 
 1. Create the client with `POST /clients` in clients.
 2. Deposit balance with `POST /payment/{client_id}/deposit` in payments.
 3. Create the order with `POST /order` in orders. The service validates the
-   client, calculates the amount and publishes `order.created` so that payments
-   charges it. The fixed price is **10 balance units per piece**; it is not
+   client in its local catalogue, calculates the amount and publishes
+   `order.created`. Payment independently evaluates that fact. The fixed price is **10 balance units per piece**; it is not
    sent in the request.
-4. If the payment is accepted, the order requests the manufacturing of its
-   pieces from machines and creates the delivery with `Pending` status.
+4. After accepting the payment outcome, order publishes `order.paid`. Machine
+   persists its work and delivery creates a pending shipment independently.
 5. Machines reports the start and end of each piece through the
-   `piece.status.update` event. When all of them finish, orders marks the
-   delivery as `Ready` and the order as `ReadyForDelivery`.
+   manufacturing facts. Once all pieces finish, order publishes
+   `order.manufactured`. Delivery makes its shipment ready and publishes
+   `delivery.ready`; order observes that fact and becomes `ReadyForDelivery`.
 6. Update the delivery with `PATCH /deliveries/delivery/{delivery_id}/status`,
    setting `Sent` or `Delivered` and, optionally, `tracking_number`.
    When it reaches `Delivered`, deliveries publishes the RabbitMQ notice that
@@ -550,7 +481,7 @@ delivery is requested. Orders rejected by payments are recorded as `Rejected`.
 
 Creation returns 202 with `PendingPayment` while the event is processed.
 If a service fails after charging, the order stays `Pending` with
-`integration_error`. Pending steps are retried every five seconds, also after a
+`integration_error`. Pending outbox publications are retried after outages, also after a
 restart. A retry can be forced with `POST /order/{order_id}/retry`.
 The order identifier prevents repeated charges or duplicate deliveries.
 Orders in the flow are kept; deleting them returns 409 to avoid reusing charge
@@ -560,14 +491,14 @@ Orders keeps the pieces in its database. `GET /order/{order_id}/pieces` shows
 their status. Machines recovers the paid pieces that are queued or being
 manufactured from orders and retries its notifications if the connection fails.
 If deliveries cannot publish a completed-delivery notice, it keeps
-`order_notified=false` and retries the publication. That field becomes `true`
-after the broker's confirmation; the order update happens when the message is
-consumed. It is not published again for deliveries that were already notified.
+its event in the local outbox and retries publication. The order update happens
+when its subscriber commits the received fact.
 
-Compose configures the internal URLs using the service names.
-For local development, the default URLs use the ports in the table.
-The standalone orders Compose reaches the other services through the host ports
-(`host.docker.internal`). Two orders instances must not be started
+Compose configures the shared RabbitMQ connection using the broker service name.
+For local development, set `RABBITMQ_URL` to the broker's exposed AMQP port.
+The standalone orders Compose reaches RabbitMQ on `host.docker.internal:5672`;
+the other services must connect to that same broker and virtual host.
+Two orders instances must not be started
 simultaneously on the same database.
 
 On startup, orders and deliveries add the flow fields to existing SQLite

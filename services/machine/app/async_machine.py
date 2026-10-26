@@ -1,37 +1,28 @@
-"""Manufacturing simulator: receives pieces and reports progress through RabbitMQ."""
+"""A durable local work list replaces polling another microservice."""
 import asyncio
 import logging
 import os
 from contextlib import suppress
 from random import randint
-import httpx
+from sqlalchemy import select, delete
+from sqlalchemy.dialects.sqlite import insert
+from .events import record_event
+from .sql import database
+from .sql.models import WorkPiece
 
 logger = logging.getLogger(__name__)
 
 
 class Machine:
-    STATUS_WAITING = "Waiting"
-    STATUS_CHANGING_PIECE = "Changing Piece"
-    STATUS_WORKING = "Working"
-
-    def __init__(self, orders_service_url, publisher):
-        self.orders_service_url = orders_service_url.rstrip("/")
-        self.publisher = publisher
-        self.queue = asyncio.Queue()
-        self.pending_ids = set()
-        # Broker confirmation precedes order persistence: recovery may still
-        # return a piece whose completion event is waiting to be consumed.
-        self.completed_ids = set()
+    def __init__(self):
+        self.status = "Waiting"
         self.working_piece = None
-        self.status = self.STATUS_WAITING
-        self.retry_seconds = float(os.getenv("REST_RETRY_SECONDS", "5"))
         self.tasks = []
 
     @classmethod
-    async def create(cls, publisher, orders_service_url="http://localhost:13001"):
-        machine = cls(orders_service_url, publisher)
-        machine.tasks = [asyncio.create_task(machine.manufacturing_coroutine()),
-                         asyncio.create_task(machine.recovery_coroutine())]
+    async def create(cls):
+        machine = cls()
+        machine.tasks = [asyncio.create_task(machine.manufacturing_coroutine())]
         return machine
 
     async def close(self):
@@ -40,77 +31,59 @@ class Machine:
         for task in self.tasks:
             with suppress(asyncio.CancelledError):
                 await task
-        await self.publisher.close()
 
-    async def reload_queue_from_orders_service(self):
-        async with httpx.AsyncClient(timeout=5) as client:
-            for status in ("Manufacturing", "Queued"):
-                response = await client.get(f"{self.orders_service_url}/piece/by-status/{status}")
-                response.raise_for_status()
-                await self.add_pieces_to_queue([piece["id"] for piece in response.json()])
-
-    async def recovery_coroutine(self):
-        while True:
-            try:
-                await self.reload_queue_from_orders_service()
-            except (httpx.RequestError, httpx.HTTPStatusError):
-                logger.warning("Order service unavailable; queue recovery will retry")
-            await asyncio.sleep(self.retry_seconds)
-
-    async def notify(self, piece_id, status):
-        """Publish a piece status event, retrying until RabbitMQ confirms it."""
-        while True:
-            try:
-                await self.publisher.publish_piece_status(piece_id, status)
-                return
-            except Exception:
-                self.status = "PendingNotification"
-                logger.warning("Piece %s %s event pending; retrying", piece_id, status)
-                await asyncio.sleep(self.retry_seconds)
+    async def manufacture_one(self):
+        async with database.SessionLocal() as db:
+            piece = await db.scalar(select(WorkPiece).where(
+                WorkPiece.status.in_(["Queued", "Manufacturing"])).order_by(WorkPiece.id).limit(1))
+            if piece is None:
+                return False
+            piece_id, order_id = piece.id, piece.order_id
+            self.working_piece = {"id": piece_id}
+            self.status = "Working"
+            piece.status = "Manufacturing"
+            await record_event(db, "piece.manufacturing.started",
+                               {"piece_id": piece_id, "order_id": order_id},
+                               f"piece.manufacturing.started:{piece_id}")
+            await db.commit()
+        # Cancellation leaves durable work in Manufacturing; startup resumes it.
+        await asyncio.sleep(float(os.getenv("MANUFACTURING_SECONDS", str(randint(5, 20)))))
+        async with database.SessionLocal() as db:
+            piece = await db.get(WorkPiece, piece_id)
+            piece.status = "Manufactured"
+            await record_event(db, "piece.manufactured", {"piece_id": piece_id, "order_id": order_id},
+                               f"piece.manufactured:{piece_id}")
+            await db.commit()
+        self.working_piece = None
+        self.status = "Waiting"
+        return True
 
     async def manufacturing_coroutine(self):
         while True:
-            piece_id = await self.queue.get()
-            self.working_piece = {"id": piece_id}
             try:
-                await self.notify(piece_id, "Manufacturing")
-                self.status = self.STATUS_WORKING
-                delay = float(os.getenv("MANUFACTURING_SECONDS", str(randint(5, 20))))
-                await asyncio.sleep(delay)
-                self.status = self.STATUS_CHANGING_PIECE
-                await self.notify(piece_id, "Manufactured")
-                self.completed_ids.add(piece_id)
-            finally:
-                self.pending_ids.discard(piece_id)
-                self.working_piece = None
-                self.status = self.STATUS_WAITING
-                self.queue.task_done()
+                if not await self.manufacture_one():
+                    await asyncio.sleep(0.25)
+            except Exception:
+                logger.exception("Local manufacturing will retry")
+                await asyncio.sleep(1)
 
     async def add_pieces_to_queue(self, piece_ids):
-        for piece_id in piece_ids:
-            if piece_id not in self.pending_ids and piece_id not in self.completed_ids:
-                self.pending_ids.add(piece_id)
-                self.queue.put_nowait(piece_id)
-
-    async def add_piece_to_queue_by_id(self, piece_id):
-        await self.add_pieces_to_queue([piece_id])
+        async with database.SessionLocal() as db:
+            for piece_id in piece_ids:
+                if type(piece_id) is not int or piece_id <= 0:
+                    raise ValueError("Invalid piece identifier")
+                await db.execute(insert(WorkPiece).values(id=piece_id, status="Queued")
+                                 .on_conflict_do_nothing(index_elements=["id"]))
+            await db.commit()
 
     async def remove_piece_from_queue(self, piece_id):
-        if self.working_piece and self.working_piece["id"] == piece_id:
-            return False
-        retained = []
-        removed = False
-        while not self.queue.empty():
-            item = self.queue.get_nowait()
-            self.queue.task_done()
-            if item == piece_id:
-                self.pending_ids.discard(item)
-                removed = True
-            else:
-                retained.append(item)
-        for item in retained:
-            self.queue.put_nowait(item)
-        return removed
+        async with database.SessionLocal() as db:
+            result = await db.execute(delete(WorkPiece).where(
+                WorkPiece.id == piece_id, WorkPiece.status == "Queued"))
+            await db.commit()
+            return result.rowcount == 1
 
     async def list_queued_pieces(self):
-        return list(self.queue._queue)
+        async with database.SessionLocal() as db:
+            return list((await db.scalars(select(WorkPiece.id).where(
+                WorkPiece.status == "Queued").order_by(WorkPiece.id))).all())

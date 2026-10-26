@@ -1,10 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
-
 from fastapi import FastAPI
 from my_chassis import configure_logging, create_health_router
-from app import messaging
-from app.auth_verifier import fetch_public_key, listen_for_cert_updates
+from app import messaging, events
+from app.auth_verifier import fetch_public_key
 from app.routers import payment_router
 from app.sql import database, models
 
@@ -18,8 +17,8 @@ async def lifespan(app):
         for index in models.Transaction.__table__.indexes:
             await conn.run_sync(lambda connection, index=index: index.create(connection, checkfirst=True))
     await fetch_public_key()
-    tasks = [asyncio.create_task(messaging.consume_orders()),
-             asyncio.create_task(listen_for_cert_updates())]
+    tasks = [asyncio.create_task(events.publish_pending_events()),
+             asyncio.create_task(events.consume_events("payment.domain", messaging.handle_event))]
     try:
         yield
     finally:

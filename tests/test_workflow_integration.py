@@ -15,7 +15,13 @@ def run():
     base_url = os.getenv("API_BASE_URL", "http://localhost:8080").rstrip("/")
     with httpx.Client(base_url=base_url, timeout=10) as client:
         def request(method, path, **kwargs):
-            response = client.request(method, path, **kwargs)
+            deadline = time.monotonic() + 10
+            while True:
+                response = client.request(method, path, **kwargs)
+                if not (response.status_code == 404 and path.endswith("/deposit")
+                        and time.monotonic() < deadline):
+                    break
+                time.sleep(0.2)
             response.raise_for_status()
             return response.json()
 
@@ -53,7 +59,7 @@ def run():
             time.sleep(1)
         else:
             raise AssertionError(f"Manufacturing timed out: {order}")
-        assert order["payment_completed"] and order["manufacturing_requested"], order
+        assert order["payment_completed"], order
         assert order["integration_error"] is None, order
         pieces = request("GET", f"/api/orders/{order_id}/pieces")
         assert len(pieces) == 2 and all(p["status"] == "Manufactured" for p in pieces), pieces

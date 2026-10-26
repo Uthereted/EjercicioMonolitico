@@ -1,16 +1,18 @@
 """Run in each service environment with its app on PYTHONPATH."""
-import asyncio
+import os
+os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
-import httpx
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from app import auth_verifier
+from app.events import SigningKey
+from app.sql import database
 
 
 class AuthVerifierTests(unittest.IsolatedAsyncioTestCase):
@@ -84,34 +86,15 @@ class AuthVerifierTests(unittest.IsolatedAsyncioTestCase):
                 await auth_verifier.verify_jwt(self.credentials())
         self.assertEqual(error.exception.status_code, 503)
 
-    async def test_public_key_fetch_validates_and_preserves_cached_key(self):
-        request = httpx.Request("GET", "http://auth/auth/public-key")
-        with patch.object(auth_verifier.httpx, "AsyncClient") as client:
-            get = client.return_value.__aenter__.return_value.get
-            get.return_value = httpx.Response(200, json={"public_key": self.public_key}, request=request)
-            self.assertTrue(await auth_verifier.fetch_public_key())
-            get.return_value = httpx.Response(200, json={"public_key": "invalid PEM"}, request=request)
-            self.assertFalse(await auth_verifier.fetch_public_key())
-            self.assertEqual(auth_verifier._public_key, self.public_key)
-
-    async def test_certificate_listener_uses_published_event_and_retries_refresh(self):
-        with patch.object(auth_verifier.aio_pika, "connect_robust", new=AsyncMock()) as connect:
-            channel = connect.return_value.channel.return_value
-            queue = channel.declare_queue.return_value
-            queue.iterator = MagicMock()
-            queue.iterator.return_value.__aenter__ = AsyncMock()
-            message = AsyncMock()
-            queue.iterator.return_value.__aenter__.return_value.__aiter__.return_value = [message]
-            # Stop the reconnect loop after the first connection has closed.
-            connect.side_effect = [connect.return_value, asyncio.CancelledError()]
-            with patch.object(auth_verifier, "fetch_public_key", new=AsyncMock(side_effect=[True, False])):
-                with patch.object(auth_verifier.asyncio, "sleep", new=AsyncMock()):
-                    with self.assertRaises(asyncio.CancelledError):
-                        await auth_verifier.listen_for_cert_updates()
-            queue.bind.assert_awaited_once_with(
-                channel.declare_exchange.return_value, routing_key="client.cert.updated")
-            message.nack.assert_awaited_once_with(requeue=True)
-            message.ack.assert_not_awaited()
+    async def test_public_key_fetch_uses_persisted_event_state(self):
+        async with database.engine.begin() as connection:
+            await connection.run_sync(database.Base.metadata.create_all)
+        async with database.SessionLocal() as db:
+            db.add(SigningKey(id=1, pem=self.public_key))
+            await db.commit()
+        self.assertTrue(await auth_verifier.fetch_public_key())
+        self.assertEqual(auth_verifier._public_key, self.public_key)
+        await database.engine.dispose()
 
 
 if __name__ == "__main__":

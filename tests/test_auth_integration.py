@@ -1,5 +1,6 @@
 """Live regression checks for the merged client/auth endpoints and JWT APIs."""
 import os
+import time
 import uuid
 
 import httpx
@@ -9,7 +10,14 @@ def run():
     base_url = os.getenv("API_BASE_URL", "http://localhost:8080")
     with httpx.Client(base_url=base_url, timeout=10) as client:
         def request(method, path, expected=200, **kwargs):
-            response = client.request(method, path, **kwargs)
+            deadline = time.monotonic() + 10
+            while True:
+                response = client.request(method, path, **kwargs)
+                if not (response.status_code == 404 and expected in (201, 202)
+                        and (path.endswith("/deposit") or path == "/api/orders")
+                        and time.monotonic() < deadline):
+                    break
+                time.sleep(0.2)
             assert response.status_code == expected, (path, response.status_code, response.text)
             return response.json() if response.status_code != 204 else None
 

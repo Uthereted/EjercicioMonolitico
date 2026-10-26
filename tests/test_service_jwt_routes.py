@@ -91,10 +91,10 @@ class ProtectedRouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json(), [])
 
-    async def test_shutdown_cancels_certificate_listener(self):
+    async def test_shutdown_cancels_event_subscriber(self):
         started, stopped = asyncio.Event(), asyncio.Event()
 
-        async def listener():
+        async def subscriber(*args):
             started.set()
             try:
                 await asyncio.Future()
@@ -102,18 +102,15 @@ class ProtectedRouteTests(unittest.IsolatedAsyncioTestCase):
                 stopped.set()
 
         with ExitStack() as patches:
-            patches.enter_context(patch.object(service_module, 'fetch_public_key', new=AsyncMock()))
-            patches.enter_context(patch.object(service_module, 'listen_for_cert_updates', new=listener))
-            if SERVICE == 'machine':
-                patches.enter_context(patch.object(service_module, 'get_machine', new=AsyncMock()))
-                patches.enter_context(patch.object(service_module, 'stop_machine', new=AsyncMock()))
-                patches.enter_context(patch.object(service_module, 'consume_manufacturing_requests', new=AsyncMock()))
-            else:
-                engine = patches.enter_context(patch.object(service_module.database, 'engine'))
-                engine.begin.return_value.__aenter__.return_value.run_sync = AsyncMock()
-                engine.dispose = AsyncMock()
-                patches.enter_context(patch.object(service_module.messaging, 'consume_delivery_events', new=AsyncMock()))
-                patches.enter_context(patch.object(service_module.workflow, 'retry_notifications', new=AsyncMock()))
+            patches.enter_context(patch.object(service_module, "fetch_public_key", new=AsyncMock()))
+            engine = patches.enter_context(patch.object(service_module.database, "engine"))
+            engine.begin.return_value.__aenter__.return_value.run_sync = AsyncMock()
+            engine.dispose = AsyncMock()
+            patches.enter_context(patch.object(service_module.events, "consume_events", new=subscriber))
+            patches.enter_context(patch.object(service_module.events, "publish_pending_events", new=AsyncMock()))
+            if SERVICE == "machine":
+                patches.enter_context(patch.object(service_module, "get_machine", new=AsyncMock()))
+                patches.enter_context(patch.object(service_module, "stop_machine", new=AsyncMock()))
             async with service_module.lifespan(app):
                 await asyncio.wait_for(started.wait(), timeout=1)
             self.assertTrue(stopped.is_set())

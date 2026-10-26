@@ -34,6 +34,8 @@ async def create_order(order_schema: schemas.OrderPost,
     await db.flush()
     db.add_all([models.Piece(order_id=order.id, status="Queued")
                 for _ in range(order.number_of_pieces)])
+    await db.flush()
+    await workflow.stage_order_facts(db, order)
     await db.commit()
     await db.refresh(order)
     return order
@@ -93,6 +95,8 @@ async def update_piece(piece_id: int, update: schemas.PieceStatusUpdate,
         if update.status == "Manufactured" and piece.status != "Manufacturing":
             raise HTTPException(409, "Piece has not started manufacturing")
         piece.status = update.status
+        await db.flush()
+        await workflow.stage_order_facts(db, order)
         await db.commit()
         await db.refresh(piece)
     if update.status == "Manufactured":
@@ -143,6 +147,8 @@ async def payment_result(order_id: int, result: schemas.PaymentResult,
             order.payment_completed = result.accepted
             order.status = "Accepted" if result.accepted else "Rejected"
             order.integration_error = None if result.accepted else result.reason
+            await db.flush()
+            await workflow.stage_order_facts(db, order)
             await db.commit()
             await db.refresh(order)
     if result.accepted:

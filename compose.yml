@@ -30,12 +30,9 @@ services:
     environment:
         PYTHONUNBUFFERED: 1
         SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
-        CLIENT_SERVICE_URL: http://client_service:8000
         ORDER_SERVICE_AUTH_SECRET: ${ORDER_SERVICE_AUTH_SECRET:-development-order-service-secret-change-me}
         RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
         RABBITMQ_EXCHANGE: manufacturing.events
-        MACHINE_SERVICE_URL: http://machineservice:8000
-        DELIVERY_SERVICE_URL: http://delivery:8000
     restart: on-failure
 
   delivery:
@@ -50,7 +47,6 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
-      CLIENT_SERVICE_URL: http://client_service:8000
       RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
@@ -62,10 +58,11 @@ services:
     build: services/machine
     ports:
       - '13002:8000'
+    volumes:
+      - machine_data:/volume
     environment:
       PYTHONUNBUFFERED: 1
-      ORDERS_SERVICE_URL: http://order-service:8000
-      CLIENT_SERVICE_URL: http://client_service:8000
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/machine.db
       RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
@@ -104,8 +101,6 @@ services:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/payment.db
       PAYMENT_SERVICE_AUTH_SECRET: ${PAYMENT_SERVICE_AUTH_SECRET:-development-payment-service-secret-change-me}
-      CLIENT_SERVICE_URL: http://client_service:8000
-      ORDERS_SERVICE_URL: http://order-service:8000
       RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
@@ -114,7 +109,7 @@ services:
     image: haproxy:latest
     ports:
       - "8080:8080"
-      - "8443:8443" # <-- Añades el puerto HTTPS
+      - "8443:8443" # <-- AÃ±ades el puerto HTTPS
       - "8404:8404"
     volumes:
       - "./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"
@@ -132,3 +127,4 @@ services:
 
 volumes:
   rabbitmq_data:
+  machine_data:

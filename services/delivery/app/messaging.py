@@ -1,97 +1,29 @@
-import asyncio
-import logging
-import os
-
-import aio_pika
-from pydantic import ValidationError
-
-from pydantic import BaseModel, Field
-from typing import Literal
-
-from . import workflow
-from .sql import crud, schemas, database
-
-logger = logging.getLogger(__name__)
+"""Delivery chooses its own actions from paid/manufactured order facts."""
+from sqlalchemy import select
+from .contracts import OrderPaid
+from .events import record_event
+from .sql import models
 
 
-class OrderDeliveryReady(BaseModel):
-    order_id: int = Field(gt=0)
-    delivery_id: int = Field(gt=0)
-    status: Literal["Ready"]
-
-
-async def handle_order_delivery_ready(db, event: OrderDeliveryReady):
-    delivery = await crud.get_delivery(db, event.delivery_id)
-
+async def handle_event(db, event_type, payload):
+    if event_type not in ("order.paid", "order.manufactured"):
+        raise ValueError("Unsupported delivery fact")
+    fact = OrderPaid.model_validate(payload)
+    delivery = await db.scalar(select(models.Delivery).where(
+        models.Delivery.order_id == fact.order_id, models.Delivery.workflow_managed.is_(True)))
     if delivery is None:
-        raise ValueError(f"Delivery {event.delivery_id} not found")
-
-    if delivery.order_id != event.order_id:
-        raise ValueError("Delivery does not belong to the order")
-
-    update = schemas.DeliveryStatusUpdate(status=event.status)
-    return await workflow.set_delivery_status(db, event.delivery_id, update)
-
-RABBITMQ_URL = os.getenv(
-    "RABBITMQ_URL",
-    "amqp://manufacturing:manufacturing@localhost:5672/",
-)
-EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events")
-
-
-async def consume_delivery_events():
-    while True:
-        try:
-            connection = await aio_pika.connect_robust(
-                RABBITMQ_URL,
-                timeout=5,
-            )
-
-            async with connection:
-                channel = await connection.channel()
-                await channel.set_qos(prefetch_count=1)
-
-                exchange = await channel.declare_exchange(
-                    EXCHANGE,
-                    aio_pika.ExchangeType.TOPIC,
-                    durable=True,
-                )
-
-                queue = await channel.declare_queue(
-                    "delivery.events",
-                    durable=True,
-                )
-
-                await queue.bind(
-                    exchange,
-                    routing_key="order.delivery.ready",
-                )
-
-                async with queue.iterator() as messages:
-                    async for message in messages:
-                        async with database.SessionLocal() as db:
-                            try:
-                                event = OrderDeliveryReady.model_validate_json(
-                                    message.body
-                                )
-                                await handle_order_delivery_ready(db, event)
-                            except (ValidationError, ValueError):
-                                logger.exception(
-                                    "Invalid delivery event; rejecting"
-                                )
-                                await message.reject(requeue=False)
-                            except Exception:
-                                logger.exception(
-                                    "Delivery event processing failed; requeueing"
-                                )
-                                await message.nack(requeue=True)
-                            else:
-                                await message.ack()
-
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception(
-                "Delivery RabbitMQ consumer unavailable; retrying"
-            )
-            await asyncio.sleep(5)
+        delivery = models.Delivery(order_id=fact.order_id, client_id=fact.client_id,
+                                   address=fact.address, status="Pending", workflow_managed=True)
+        db.add(delivery)
+        await db.flush()
+    if delivery.client_id != fact.client_id or delivery.address != fact.address:
+        raise ValueError("Conflicting order delivery")
+    data = {"delivery_id": delivery.id, "order_id": delivery.order_id, "client_id": delivery.client_id}
+    await record_event(db, "delivery.created", data, f"delivery.created:{delivery.id}")
+    if event_type == "order.manufactured" and delivery.status == "Pending":
+        delivery.status = "Ready"
+    # Also bridge existing deliveries during the transition to event choreography.
+    if delivery.status in ("Ready", "Sent", "Delivered"):
+        await record_event(db, "delivery.ready", data, f"delivery.ready:{delivery.id}")
+    if delivery.status == "Delivered":
+        await record_event(db, "delivery.delivered", data, f"delivery.delivered:{delivery.id}")

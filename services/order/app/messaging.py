@@ -1,191 +1,65 @@
-"""Publish order/manufacturing requests and consume workflow results."""
-import asyncio
-import logging
-import os
-from typing import Literal
-
-import aio_pika
-from my_chassis.messaging import create_json_message, publish_json_event
-from fastapi import HTTPException
-from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import select
-from .sql import database, models
-
-logger = logging.getLogger(__name__)
-RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
-EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events")
+"""React to payment, manufacturing and delivery facts using local state."""
+from sqlalchemy.dialects.sqlite import insert
+from .contracts import ClientCreated, ClientCatalogue, PaymentResult, PieceFact, DeliveryFact
+from .events import RetryEvent
+from .sql import models
+from . import workflow
 
 
-class DeliveryStatusUpdate(BaseModel):
-    delivery_id: int = Field(gt=0)
-    order_id: int = Field(gt=0)
-    status: Literal["Delivered"]
-
-
-class PieceStatusUpdate(BaseModel):
-    piece_id: int = Field(gt=0)
-    status: Literal["Manufacturing", "Manufactured"]
-
-
-async def publish_event(routing_key, queue_name, payload, message_id):
-    await publish_json_event(
-        RABBITMQ_URL, EXCHANGE, routing_key, queue_name, payload, message_id,
-    )
-
-
-async def handle_piece_update(event):
-    from .routers import main_router
-    from .sql import schemas
-
-    async with database.SessionLocal() as db:
-        try:
-            await main_router.update_piece(
-                event.piece_id, schemas.PieceStatusUpdate(status=event.status), db,
-            )
-        except HTTPException as exc:
-            if exc.status_code == 404:
-                raise ValueError(exc.detail) from exc
-            # A temporarily out-of-order update can succeed on redelivery.
-            raise
-
-
-class PaymentResultEvent(BaseModel):
-    order_id: int = Field(gt=0)
-    client_id: int = Field(gt=0)
-    amount: int = Field(gt=0)
-    accepted: bool
-    reason: str = "Payment rejected"
-
-
-async def handle_delivery_update(event):
-    from .routers import main_router
-    from .sql import schemas
-
-    async with database.SessionLocal() as db:
-        order = await main_router.require_order(db, event.order_id)
-        if order.delivery_id != event.delivery_id:
-            raise ValueError("Delivery does not match the order")
-        await main_router.update_order_status(
-            event.order_id, schemas.OrderStatusUpdate(status=event.status), db,
-        )
-
-
-async def process_order_event(message):
-    """Dispatch both bindings of order.events before acknowledging persistence."""
-    try:
-        if message.routing_key == "delivery.status.update":
-            await handle_delivery_update(DeliveryStatusUpdate.model_validate_json(message.body))
-        elif message.routing_key == "piece.status.update":
-            await handle_piece_update(PieceStatusUpdate.model_validate_json(message.body))
-        else:
-            raise ValueError("Unknown order event routing key")
-    except (ValidationError, ValueError):
-        logger.exception("Invalid order event; rejecting")
-        await message.reject(requeue=False)
-    except Exception:
-        logger.exception("Order event processing pending; retrying")
-        await asyncio.sleep(5)
-        await message.nack(requeue=True)
-    else:
-        await message.ack()
-
-
-async def consume_order_events():
-    while True:
-        try:
-            connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
-            async with connection:
-                channel = await connection.channel()
-                await channel.set_qos(prefetch_count=1)
-                exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
-                queue = await channel.declare_queue("order.events", durable=True)
-                await queue.bind(exchange, routing_key="delivery.status.update")
-                await queue.bind(exchange, routing_key="piece.status.update")
-                async with queue.iterator() as messages:
-                    async for message in messages:
-                        await process_order_event(message)
-        except Exception:
-            logger.exception("Order event consumer unavailable; retrying in five seconds")
-            await asyncio.sleep(5)
-
-
-async def handle_payment_result(event: PaymentResultEvent):
-    """Apply a payment.approved/payment.rejected event idempotently."""
-    from .routers import main_router
-    from .sql import schemas
-
-    async with database.SessionLocal() as db:
-        try:
-            await main_router.payment_result(
-                event.order_id, schemas.PaymentResult(**event.model_dump(exclude={"order_id"})), db,
-            )
-        except HTTPException as exc:
-            if exc.status_code in (404, 409):
-                raise ValueError(exc.detail) from exc
-            raise
-
-
-async def consume_payment_results():
-    """Consume payment.approved and payment.rejected events from RabbitMQ."""
-    while True:
-        try:
-            connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
-            async with connection:
-                channel = await connection.channel()
-                await channel.set_qos(prefetch_count=1)
-                exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
-                queue = await channel.declare_queue("order.payment.events", durable=True)
-                await queue.bind(exchange, routing_key="payment.approved")
-                await queue.bind(exchange, routing_key="payment.rejected")
-                async with queue.iterator() as messages:
-                    async for message in messages:
-                        try:
-                            event = PaymentResultEvent.model_validate_json(message.body)
-                            expected = "payment.approved" if event.accepted else "payment.rejected"
-                            if message.routing_key != expected:
-                                raise ValueError("Payment event routing key does not match its result")
-                            await handle_payment_result(event)
-                        except (ValidationError, ValueError):
-                            logger.exception("Invalid/conflicting payment result; rejecting")
-                            await message.reject(requeue=False)
-                        except Exception:
-                            logger.exception("Payment result processing pending; retrying")
-                            await asyncio.sleep(5)
-                            await message.nack(requeue=True)
-                        else:
-                            await message.ack()
-        except Exception:
-            logger.exception("Payment result consumer unavailable; retrying in five seconds")
-            await asyncio.sleep(5)
-
-
-async def publish_pending_events():
-    while True:
-        try:
-            connection = await aio_pika.connect_robust(RABBITMQ_URL, timeout=5)
-            async with connection:
-                channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
-                exchange = await channel.declare_exchange(EXCHANGE, aio_pika.ExchangeType.TOPIC, durable=True)
-                # Keep messages even if payment has not started yet.
-                queue = await channel.declare_queue("payment.events", durable=True)
-                await queue.bind(exchange, routing_key="order.created")
-                while True:
-                    async with database.SessionLocal() as db:
-                        orders = (await db.scalars(select(models.Order).where(
-                            models.Order.status == "PendingPayment",
-                            models.Order.client_id.is_not(None),
-                            models.Order.order_created_published.is_(False),
-                            models.Order.payment_completed.is_(False),
-                        ).limit(100))).all()
-                        for order in orders:
-                            payload = {"order_id": order.id, "client_id": order.client_id,
-                                       "amount": order.total_price}
-                            await exchange.publish(create_json_message(
-                                payload, "order.created", f"order.created:{order.id}",
-                            ), routing_key="order.created", mandatory=True, timeout=5)
-                            order.order_created_published = True
-                            await db.commit()
-                    await asyncio.sleep(1)
-        except Exception:
-            logger.exception("RabbitMQ publication unavailable; retrying in five seconds")
-            await asyncio.sleep(5)
+async def handle_event(db, event_type, payload):
+    if event_type in ("client.created", "clients.catalogue.published"):
+        ids = ([ClientCreated.model_validate(payload).client_id] if event_type == "client.created"
+               else ClientCatalogue.model_validate(payload).client_ids)
+        for client_id in ids:
+            await db.execute(insert(models.KnownClient).values(id=client_id).on_conflict_do_nothing())
+        return
+    if event_type in ("payment.approved", "payment.rejected"):
+        fact = PaymentResult.model_validate(payload)
+        if fact.accepted != (event_type == "payment.approved"):
+            raise ValueError("Payment outcome does not match event")
+        order = await db.get(models.Order, fact.order_id)
+        if order is None:
+            raise ValueError("Unknown order")
+        if order.client_id != fact.client_id or order.total_price != fact.amount:
+            raise ValueError("Payment details do not match order")
+        if order.payment_completed and not fact.accepted or order.status == "Rejected" and fact.accepted:
+            raise ValueError("Conflicting payment result")
+        if not order.payment_completed and order.status != "Rejected":
+            order.payment_completed = fact.accepted
+            order.status = "Accepted" if fact.accepted else "Rejected"
+            order.integration_error = None if fact.accepted else fact.reason
+            await db.flush()
+        await workflow.stage_order_facts(db, order)
+        return
+    if event_type in ("piece.manufacturing.started", "piece.manufactured"):
+        fact = PieceFact.model_validate(payload)
+        piece = await db.get(models.Piece, fact.piece_id)
+        if piece is None or fact.order_id is not None and piece.order_id != fact.order_id:
+            raise ValueError("Unknown piece")
+        order = await db.get(models.Order, piece.order_id)
+        if not order.payment_completed:
+            raise RetryEvent("Payment confirmation is pending")
+        if piece.status != "Manufactured":
+            # A finished fact is authoritative even if a started fact arrives later.
+            piece.status = "Manufactured" if event_type == "piece.manufactured" else "Manufacturing"
+            await db.flush()
+        await workflow.stage_order_facts(db, order)
+        return
+    if event_type in ("delivery.created", "delivery.ready", "delivery.delivered"):
+        fact = DeliveryFact.model_validate(payload)
+        order = await db.get(models.Order, fact.order_id)
+        if order is None or order.client_id != fact.client_id:
+            raise ValueError("Delivery does not match order")
+        if order.delivery_id is not None and order.delivery_id != fact.delivery_id:
+            raise ValueError("Conflicting delivery")
+        order.delivery_id = fact.delivery_id
+        if event_type != "delivery.created" and order.status != "Delivered":
+            pieces = await workflow.pieces_for_order(db, order.id)
+            if not order.payment_completed or any(p.status != "Manufactured" for p in pieces):
+                raise RetryEvent("Manufacturing facts are pending")
+            if len(pieces) != order.number_of_pieces:
+                raise ValueError("Incorrect piece count")
+            order.status = "Delivered" if event_type == "delivery.delivered" else "ReadyForDelivery"
+        order.integration_error = None
+        return
+    raise ValueError("Unsupported order fact")
