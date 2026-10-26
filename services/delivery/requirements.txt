@@ -4,6 +4,6 @@ pydantic~=2.9
 SQLAlchemy[asyncio]~=2.0
 aiosqlite~=0.20
 aio-pika~=9.4
-microservice_chassis[messaging] @ git+https://github.com/Uthereted/chasis_homework.git@main
 PyJWT[crypto]~=2.9
 httpx~=0.28
+microservice_chassis[auth,events,database]==0.5.0

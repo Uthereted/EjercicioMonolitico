@@ -14,7 +14,7 @@ async def lifespan(app):
         await conn.run_sync(workflow.upgrade)
     await fetch_public_key()
     tasks = [asyncio.create_task(events.publish_pending_events()),
-             asyncio.create_task(events.consume_events("delivery.domain", messaging.handle_event))]
+             asyncio.create_task(events.consume_events("delivery.domain", messaging.handle_event, topics=messaging.TOPICS))]
     try:
         yield
     finally:

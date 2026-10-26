@@ -6,3 +6,4 @@ aio-pika~=9.4
 PyJWT[crypto]~=2.9
 SQLAlchemy[asyncio]~=2.0
 aiosqlite~=0.20
+microservice_chassis[auth,events,database]==0.5.0

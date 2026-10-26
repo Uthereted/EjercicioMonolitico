@@ -6,6 +6,8 @@ from .sql import models
 from . import workflow
 
 
+TOPICS = ('client.created', 'clients.catalogue.published', 'payment.approved', 'payment.rejected', 'piece.manufacturing.started', 'piece.manufactured', 'delivery.created', 'delivery.ready', 'delivery.delivered', 'auth.signing-key.published')
+
 async def handle_event(db, event_type, payload):
     if event_type in ("client.created", "clients.catalogue.published"):
         ids = ([ClientCreated.model_validate(payload).client_id] if event_type == "client.created"

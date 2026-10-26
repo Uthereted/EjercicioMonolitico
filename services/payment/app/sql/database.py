@@ -1,27 +1,6 @@
-# -*- coding: utf-8 -*-
-"""Database session configuration."""
+"""Service-owned database configured through the shared chassis."""
 import os
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from my_chassis.database import create_database
 
-SQLALCHEMY_DATABASE_URL = os.getenv(
-    'SQLALCHEMY_DATABASE_URL',
-    "sqlite+aiosqlite:///./payment.db"
-)
-
-engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    echo=False
-)
-
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    expire_on_commit=False,
-    bind=engine,
-    class_=AsyncSession,
-    future=True
-)
-
-Base = declarative_base()
+SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///./payment.db")
+engine, SessionLocal, Base = create_database(SQLALCHEMY_DATABASE_URL, expire_on_commit=False)

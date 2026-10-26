@@ -5,10 +5,13 @@ services:
       - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"
     environment:
+      RABBITMQ_CONFIG_FILES: /etc/rabbitmq/conf.d
       RABBITMQ_DEFAULT_USER: manufacturing
       RABBITMQ_DEFAULT_PASS: manufacturing
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./infrastructure/rabbitmq/20-domain.conf:/etc/rabbitmq/conf.d/20-domain.conf:ro
+      - ./infrastructure/rabbitmq/domain-definitions.json:/etc/rabbitmq/domain-definitions.json:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
@@ -39,7 +42,9 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    build: services/delivery
+    build:
+      context: .
+      dockerfile: services/delivery/Dockerfile
     ports:
       - '13004:8000'
     volumes:
@@ -55,7 +60,9 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    build: services/machine
+    build:
+      context: .
+      dockerfile: services/machine/Dockerfile
     ports:
       - '13002:8000'
     volumes:
@@ -71,7 +78,9 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    build: services/client
+    build:
+      context: .
+      dockerfile: services/client/Dockerfile
     container_name: client_service
     ports:
       - '13005:8000'
@@ -105,6 +114,34 @@ services:
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
+  mongodb:
+    image: mongo:8.0
+    volumes:
+      - audit_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ping:1})"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: on-failure
+
+  event-logger:
+    build:
+      context: .
+      dockerfile: services/event_logger/Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      PYTHONUNBUFFERED: 1
+      MONGODB_URL: mongodb://mongodb:27017
+      AUDIT_DATABASE: manufacturing_audit
+      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: manufacturing.events
+    restart: on-failure
+
   haproxy:
     image: haproxy:latest
     ports:
@@ -128,3 +165,4 @@ services:
 volumes:
   rabbitmq_data:
   machine_data:
+  audit_data:

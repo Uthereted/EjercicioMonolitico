@@ -7,4 +7,4 @@ httpx~=0.28
 
 aio-pika~=9.4
 PyJWT[crypto]~=2.9
-microservice_chassis[messaging] @ git+https://github.com/Uthereted/chasis_homework.git@main
+microservice_chassis[auth,events,database]==0.5.0

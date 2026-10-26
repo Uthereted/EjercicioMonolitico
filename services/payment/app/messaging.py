@@ -6,6 +6,8 @@ from .events import record_event
 from .sql import models, crud
 
 
+TOPICS = ('client.created', 'clients.catalogue.published', 'order.created', 'auth.signing-key.published')
+
 async def handle_event(db, event_type, payload):
     if event_type in ("client.created", "clients.catalogue.published"):
         ids = ([ClientCreated.model_validate(payload).client_id] if event_type == "client.created"

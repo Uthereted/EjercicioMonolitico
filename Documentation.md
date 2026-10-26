@@ -161,13 +161,15 @@ The gateway routes `/api/orders`, `/api/pieces`, `/api/auth`, `/api/clients`, `/
 **Unit tests** (from the repository root, without Docker, with the services' dependencies installed):
 
 ```bash
-python tests/test_order_messaging.py
-python tests/test_payment_messaging.py
-python tests/test_delivery_messaging.py
-python tests/test_machine_messaging.py
+python tests/test_domain_events.py --service order
+python tests/test_domain_events.py --service payment
+python tests/test_domain_events.py --service delivery
+python tests/test_domain_events.py --service machine
 ```
 
-`tests/test_auth_verifier.py` tests JWT verification and runs in the orders or payments environment.
+Run `python tests/test_refresh_tokens.py` for token security and
+`python tests/test_event_logger.py` for audit persistence and acknowledgements.
+Shared JWT implementation tests live in the chassis repository.
 
 **Integration tests** (with everything running in Docker; they use the gateway at `API_BASE_URL`, `http://localhost:8080` by default):
 

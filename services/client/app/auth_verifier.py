@@ -1,24 +1,14 @@
-"""Verify locally issued access tokens without calling the auth service itself."""
-import jwt
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
+"""Local signing-key provider and service-specific authorization policies."""
+from my_chassis.auth import JWTVerifier
 from . import crypto
 
-security = HTTPBearer(auto_error=False)
+
+async def local_key():
+    return crypto.get_public_key_pem()
 
 
-async def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    if credentials is None:
-        raise HTTPException(401, "Bearer token required", headers={"WWW-Authenticate": "Bearer"})
-    try:
-        return jwt.decode(
-            credentials.credentials, crypto.get_public_key_pem(), algorithms=["RS256"],
-            issuer="manufacturing-client", audience="manufacturing-services",
-            options={"require": ["exp", "iat", "sub"]},
-        )
-    except jwt.InvalidTokenError:
-        raise HTTPException(401, "Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
+verifier = JWTVerifier(key_loader=local_key, issuer="manufacturing-client", audience="manufacturing-services")
+verify_jwt = verifier.verify_jwt
 
 
 def is_admin(payload: dict) -> bool:

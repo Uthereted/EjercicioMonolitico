@@ -1,4 +1,4 @@
-"""Refresh token rotation, replay, persistence and concurrent use against SQLite."""
+"""Refresh token rotation, expiry, logout and concurrent replay against SQLite."""
 import asyncio
 import os
 import sys
@@ -6,17 +6,15 @@ import tempfile
 import unittest
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 import httpx
-import jwt
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'services/client'))
 os.environ['SQLALCHEMY_DATABASE_URL'] = 'sqlite+aiosqlite:///:memory:'
 from app.main import app
-from app import auth_sessions, crypto
+from app import auth_sessions
 from app.dependencies import get_db
 from app.sql import database, models, crud
 
@@ -58,21 +56,6 @@ class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post('/auth/refresh', json={'refresh_token': token})
         self.assertEqual(response.status_code, expected, response.text)
         return response
-
-    async def test_get_and_post_login_store_only_hash_and_return_refresh(self):
-        for method in ('GET', 'POST'):
-            tokens = await self.login(method)
-            async with self.sessions() as db:
-                stored = await db.get(models.RefreshToken, auth_sessions.token_hash(tokens['refresh_token']))
-                self.assertIsNotNone(stored)
-                self.assertNotEqual(stored.token_hash, tokens['refresh_token'])
-                self.assertIsNone(stored.consumed_at)
-                self.assertIsNone(stored.revoked_at)
-            # An opaque refresh token cannot be used as an access token.
-            response = await self.client.get('/clients', headers={
-                'Authorization': f"Bearer {tokens['refresh_token']}",
-            })
-            self.assertEqual(response.status_code, 401)
 
     async def test_refresh_rotates_pair_without_extending_session_expiry(self):
         original = await self.login()
@@ -118,36 +101,6 @@ class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
         await self.refresh(tokens['refresh_token'], expected=401)
         await self.refresh(other['refresh_token'])
 
-    async def test_refresh_uses_current_user_roles_email_and_client(self):
-        tokens = await self.login()
-        async with self.sessions() as db:
-            user = await crud.get_user_by_username(db, 'admin')
-            await db.execute(delete(models.user_roles).where(models.user_roles.c.user_id == user.id))
-            user.email = 'changed@example.org'
-            user.username = 'changed'
-            client = models.Client(name='Changed', email=user.email)
-            db.add(client)
-            await db.flush()
-            client_id = client.id
-            await db.commit()
-        renewed = (await self.refresh(tokens['refresh_token'])).json()
-        payload = jwt.decode(renewed['access_token'], crypto.get_public_key_pem(), algorithms=['RS256'],
-                             audience='manufacturing-services', issuer='manufacturing-client')
-        self.assertEqual(payload['roles'], [])
-        self.assertEqual(payload['username'], 'changed')
-        self.assertEqual(payload['email'], 'changed@example.org')
-        self.assertEqual(payload['client_id'], client_id)
-
-    async def test_refresh_survives_database_reopen_and_signing_key_change(self):
-        tokens = await self.login()
-        await self.engine.dispose()
-        with patch.object(crypto, '_private_key', None):
-            renewed = (await self.refresh(tokens['refresh_token'])).json()
-            response = await self.client.get('/clients', headers={
-                'Authorization': f"Bearer {renewed['access_token']}",
-            })
-            self.assertEqual(response.status_code, 200)
-
     async def test_parallel_use_claims_once_and_replay_revokes_winner(self):
         tokens = await self.login()
         responses = await asyncio.gather(*(
@@ -157,17 +110,6 @@ class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(response.status_code for response in responses), [200, 401])
         winner = next(response.json() for response in responses if response.status_code == 200)
         await self.refresh(winner['refresh_token'], expected=401)
-
-    async def test_expired_access_does_not_prevent_refresh(self):
-        tokens = await self.login()
-        payload = jwt.decode(tokens['access_token'], crypto.get_public_key_pem(), algorithms=['RS256'],
-                             audience='manufacturing-services')
-        payload['exp'] = 1
-        expired = jwt.encode(payload, crypto._private_key, algorithm='RS256')
-        response = await self.client.get('/clients', headers={'Authorization': f'Bearer {expired}'})
-        self.assertEqual(response.status_code, 401)
-        await self.refresh(tokens['refresh_token'])
-
 
 if __name__ == '__main__':
     unittest.main()

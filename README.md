@@ -1,7 +1,7 @@
 # Manufacturing Microservices
 
-The project is split into five FastAPI microservices: orders, machines,
-deliveries, clients and payments. Each service has its own code, container,
+The project has five FastAPI microservices (orders, machines, deliveries, clients
+and payments), plus an independent MongoDB business-event audit worker. Each service has its own code, container,
 Dockerfile and `requirements.txt`.
 
 ## Quick start
@@ -44,49 +44,58 @@ its volume in `services/order/db_volume/` and documentation in
 `delivery_volume/` and payments uses `payment_db_volume/`. The databases
 (SQLite) are created automatically on startup if they do not exist.
 
-## Shared chassis
+## Shared chassis 0.5.0
 
-The chassis gathers infrastructure utilities shared by the services:
+The independent source repository is [chasis_homework](https://github.com/Uthereted/chasis_homework).
+This project includes its tested 0.5.0 wheel in `vendor/`; Docker installs that
+exact artifact for all five APIs and the audit worker. A sibling checkout and
+access to a mutable Git branch are not needed to start the stack.
 
-| Utility | Services |
+| Shared infrastructure | Consumers |
 | --- | --- |
-| Logs and `GET /health` | Orders and payments |
-| Per-request database session (`create_db_dependency`) | Clients, deliveries, orders and payments |
+| `JWTVerifier`: RS256, claims, issuer/audience, cached key refresh | All five APIs |
+| RSA validation, local key providers and key-event persistence | JWT/event consumers |
+| `EventBus`: outbox/inbox models, atomic dispatch, confirmed publication and retries | All five business services |
+| `TopicTransport`: broker connection, exchange and local subscription setup | Event services and audit worker |
+| `create_database` and per-request session dependencies | All service databases |
+| Logging and health utilities | API services / audit worker as configured |
 
-JWT verification stays in the individual services in this project.
-The chassis contains no models, business rules or database commits.
-It also provides `publish_json_event` and `create_json_message`; the current
-transactional event flow uses each service's `app.events` module to keep its
-outbox/inbox in the same database transaction as its business state.
+Each `app/events.py` now only binds the shared bus to its service's database and
+configuration. JWT modules supply their expected issuer/audience and key loader.
+Business models, consumer contracts, permissions, payment decisions and workflow
+rules remain in the services. Refresh sessions remain owned by client/auth.
 
-The chassis lives in a separate repository:
-[chasis_homework](https://github.com/Uthereted/chasis_homework).
-The requirements of clients, deliveries, orders and payments download it from
-GitHub. You only need to clone this project; no local chassis folder is
-required.
+The wheel includes shared infrastructure tests, and the independent chassis
+repository adds tests for configurable JWT verification, key rotation, key event
+reception, database binding and transactional rollback. See `vendor/README.md`
+and `tools/build_chassis.py` to regenerate the distribution after chassis changes.
 
-Orders and payments import `configure_logging` and `create_health_router` from
-`my_chassis`. Sessions are imported from `my_chassis.database`.
-There is no chassis application to start: it is a
-library installed in each service. The separate repository contains the
-functions, the installation configuration and a usage README.
+## Dedicated business event audit
 
-To check it after rebuilding and starting the services:
+`event-logger` consumes `audit.domain` independently and stores facts in MongoDB:
+`manufacturing_audit.business_events`. It records `client.#`, `order.#`,
+`payment.#`, `piece.#` and `delivery.#` facts, with event identifier, producer,
+payload and UTC receipt time. Authentication/key publication and periodic client
+catalogue snapshots are not subscribed to this audit queue.
 
-```bash
-curl http://localhost:13001/health
-curl http://localhost:13006/health
+MongoDB keeps its data on the `audit_data` volume and has no published host port.
+The consumer acknowledges a message only after an acknowledged journaled write.
+An upsert keyed by `_id = event_id` keeps redeliveries from duplicating records.
+Business services do not depend on the logger or MongoDB: the durable audit queue
+retains their facts while the recorder is offline. It archives facts from the
+activation of its subscription; old already-consumed events are not backfilled.
+
+Inspect recent recorded events:
+
+```powershell
+docker compose logs --tail=30 event-logger
+docker compose exec -T mongodb mongosh --quiet --eval 'db.getSiblingDB("manufacturing_audit").business_events.find({}, {event_type:1,producer:1,received_at:1}).sort({received_at:-1}).limit(20).toArray()'
 ```
 
-The first endpoint returns `{"status":"ok","service":"order-service"}` and the
-second `{"status":"ok","service":"payment-service"}`. They do not check the
-database or RabbitMQ. The gateway's `/health` on port 8080 is independent.
-
-The dependency uses the chassis `main` branch. After pushing changes to the
-chassis, run
-`docker compose build --no-cache order-service paymentservice delivery client_service`
-and `docker compose up -d order-service paymentservice delivery client_service`
-to reinstall it.
+`python tests/test_event_audit_integration.py` completes a new order while the
+logger is stopped, restarts it, verifies the complete business-event trail and
+replays the creation fact to verify audit and payment deduplication. Test records
+are retained, and the audit worker is restored in a `finally` block.
 
 ## Dependencies and Docker images
 
@@ -96,13 +105,18 @@ the preceding Dockerfile instructions do not change. Changing only the code
 does not require reinstalling the dependencies. Avoiding `--no-cache` and
 keeping the Docker cache lets you take advantage of this reuse.
 
-Clients, deliveries, orders and payments install `microservice_chassis` from
-GitHub. Services that publish events select the `[messaging]` extra.
-Python imports it as `my_chassis`.
-The Dockerfiles include Git and certificates to download it during the build.
+All consumers pin `microservice_chassis[auth,events,database]==0.5.0` (the audit
+worker uses the events extra). Docker installs the local wheel first, then the
+remaining requirements. All Dockerfiles now use the repository root as context.
 On another PC, clone this repository, copy `dot_env_example` to `.env` and run
-`docker compose up -d --build`. Outside Docker, install Git and run
-`python -m pip install -r requirements.txt` from the service folder.
+`docker compose up -d --build`; MongoDB and audit are included automatically.
+For local Python development, first install the shared package from the root:
+
+```powershell
+python -m pip install "vendor/microservice_chassis-0.5.0-py3-none-any.whl[auth,events,database]"
+python -m pip install -r services/order/requirements.txt
+```
+
 `email-validator` is required for client emails.
 `SQLAlchemy[asyncio]` includes `greenlet`, which is required for asynchronous
 database access.
@@ -226,10 +240,9 @@ and `Client / List clients`. Select the
 `Refresh token` replaces both, and `Logout` clears them after revoking the session.
 The client folder inherits Bearer authentication from `accessToken`.
 
-For local JWT regression tests, set `PYTHONPATH` to `services/machine` or
-`services/delivery` and run `python -m unittest discover -s tests -p test_auth_verifier.py -v`.
-Run `tests/test_service_jwt_routes.py` separately with `AUTH_TEST_SERVICE=machine`
-and `AUTH_TEST_SERVICE=delivery`; run `tests/test_service_token.py` for service login.
+Run `python tests/test_refresh_tokens.py` for refresh rotation, expiry, logout
+and replay protection. JWT verification is covered by the live authentication
+test and by the shared chassis tests in its own repository.
 
 For local testing, the initial user `admin` with password `admin123` is kept.
 Public registration only creates users with the `user` role. Regular users are
@@ -249,8 +262,6 @@ The tests `tests/test_auth_integration.py` and
 `tests/test_workflow_integration.py` use the gateway given by `API_BASE_URL`
 (default `http://localhost:8080`). The second one obtains a token first; the
 credentials can be changed with `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD`.
-`tests/test_auth_verifier.py` is run separately in the orders and payments
-environments.
 
 HAProxy gives access to the five services through **http://localhost:8080**.
 The individual ports in the table are kept for debugging. Internal calls
@@ -404,7 +415,7 @@ what to do. There are no internal command queues, RPC operations or reply queues
 | `order.manufactured` | Order | Delivery independently makes the shipment ready |
 | `delivery.created` / `delivery.ready` / `delivery.delivered` | Delivery | Order updates its local view of delivery progress |
 
-Each service stores an `event_outbox` and `event_inbox` in its own SQLite
+The shared chassis binds an `event_outbox` and `event_inbox` to each service's own SQLite
 database. State changes, derived facts and inbox identifiers commit atomically.
 The outbox publisher retries outages, uses persistent messages and broker
 confirmations. A crash between confirmation and marking an event published may
@@ -412,8 +423,23 @@ produce a duplicate; subscribers persist event identifiers and process effects
 only once. Invalid facts are rejected; transient failures roll back and retry.
 
 The durable queues are `order.domain`, `payment.domain`,
-`delivery.domain` and `machine.domain`. Infrastructure provisions their
-bindings before publishing, so an offline subscriber can catch up later.
+`delivery.domain`, `machine.domain` and the independent `audit.domain`. RabbitMQ imports the topology from
+`infrastructure/rabbitmq/domain-definitions.json` at boot, before services need
+to publish. Its configuration is `infrastructure/rabbitmq/20-domain.conf`.
+Publishers declare only the exchange and never create peer queues. Subscribers
+declare only their own queue and bind their local `messaging.TOPICS` contracts.
+Adding a consumer does not require changing or rebuilding business publishers.
+For a separate broker, import the definitions before starting producers; the
+bundled definitions include the existing development user `manufacturing`.
+See [RabbitMQ definition import](https://www.rabbitmq.com/docs/definitions).
+
+Services use independent databases and have no peer service URLs or startup
+dependencies. They depend on the shared broker, not on a synchronous response
+from another business service. Persisted catalogues and public keys support
+existing protected requests while client/auth is offline; new login/refresh
+requests still require client/auth. Unavailable downstream consumers catch up
+from durable queues after restarting. APIs expose eventual progress, not an
+immediate guarantee that asynchronous processing has completed.
 
 Machine has its own SQLite database on the `machine_data` volume. Both queued
 and interrupted work survive restarts. It never polls orders for recovery.
@@ -423,20 +449,38 @@ paid-order fact. Existing active orders are bridged to the new event stream on
 startup without charging them twice. Legacy API publication flags are retained
 for compatibility; the outbox is now the publication authority.
 
-To run the stack and regression tests:
+Run each unit test in a separate process with the service dependencies installed:
+
+```powershell
+python tests/test_domain_events.py --service order
+python tests/test_domain_events.py --service payment
+python tests/test_domain_events.py --service delivery
+python tests/test_domain_events.py --service machine
+python tests/test_refresh_tokens.py
+python tests/test_event_logger.py
+```
+
+With Docker running, check authentication and the complete order flow:
 
 ```powershell
 docker compose up -d --build
-python tests/test_order_messaging.py
-python tests/test_payment_messaging.py
-python tests/test_delivery_messaging.py
-python tests/test_machine_messaging.py
 python tests/test_auth_integration.py
 python tests/test_workflow_integration.py
 ```
 
 The live tests create retained test records. The workflow test verifies a paid
 order reaches `Delivered` with the expected final balance.
+For changes to recovery or auditing, also run these Docker checks:
+
+```powershell
+python tests/test_event_recovery_integration.py
+python tests/test_event_audit_integration.py
+```
+
+These checks temporarily stop containers and restore them in `finally` blocks.
+They verify durable work after restarts and audit persistence without duplicate
+records or charges. Shared chassis implementation tests remain in its own
+repository instead of being repeated for each service.
 
 ## Order flow
 

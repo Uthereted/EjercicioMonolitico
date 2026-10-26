@@ -15,7 +15,7 @@ async def lifespan(app):
     await fetch_public_key()
     machine = await get_machine()
     publisher = asyncio.create_task(events.publish_pending_events())
-    consumer = asyncio.create_task(events.consume_events("machine.domain", messaging.handle_event))
+    consumer = asyncio.create_task(events.consume_events("machine.domain", messaging.handle_event, topics=messaging.TOPICS))
     try:
         yield
     finally:

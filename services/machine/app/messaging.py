@@ -4,6 +4,8 @@ from .contracts import OrderPaid
 from .sql.models import WorkPiece
 
 
+TOPICS = ('order.paid', 'auth.signing-key.published')
+
 async def handle_event(db, event_type, payload):
     if event_type != "order.paid":
         raise ValueError("Unsupported machine fact")

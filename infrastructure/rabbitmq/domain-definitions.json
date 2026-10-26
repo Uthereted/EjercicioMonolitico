@@ -1,0 +1,268 @@
+{
+  "users": [
+    {
+      "name": "manufacturing",
+      "password_hash": "J/h4caVXQ0ELchO6p1XRDj5bHoRy9gFmDGaSuQIlPDSBD8fq",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": [
+        "administrator"
+      ]
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "manufacturing",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "manufacturing.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "order.domain",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "payment.domain",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "delivery.domain",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "machine.domain",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "audit.domain",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "client.created",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "clients.catalogue.published",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "payment.approved",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "payment.rejected",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "piece.manufacturing.started",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "piece.manufactured",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "delivery.created",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "delivery.ready",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "delivery.delivered",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "auth.signing-key.published",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "payment.domain",
+      "destination_type": "queue",
+      "routing_key": "client.created",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "payment.domain",
+      "destination_type": "queue",
+      "routing_key": "clients.catalogue.published",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "payment.domain",
+      "destination_type": "queue",
+      "routing_key": "order.created",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "payment.domain",
+      "destination_type": "queue",
+      "routing_key": "auth.signing-key.published",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "delivery.domain",
+      "destination_type": "queue",
+      "routing_key": "order.paid",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "delivery.domain",
+      "destination_type": "queue",
+      "routing_key": "order.manufactured",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "delivery.domain",
+      "destination_type": "queue",
+      "routing_key": "auth.signing-key.published",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "machine.domain",
+      "destination_type": "queue",
+      "routing_key": "order.paid",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "machine.domain",
+      "destination_type": "queue",
+      "routing_key": "auth.signing-key.published",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "audit.domain",
+      "destination_type": "queue",
+      "routing_key": "client.#",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "audit.domain",
+      "destination_type": "queue",
+      "routing_key": "order.#",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "audit.domain",
+      "destination_type": "queue",
+      "routing_key": "payment.#",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "audit.domain",
+      "destination_type": "queue",
+      "routing_key": "piece.#",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "audit.domain",
+      "destination_type": "queue",
+      "routing_key": "delivery.#",
+      "arguments": {}
+    }
+  ]
+}

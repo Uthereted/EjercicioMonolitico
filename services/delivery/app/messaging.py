@@ -5,6 +5,8 @@ from .events import record_event
 from .sql import models
 
 
+TOPICS = ('order.paid', 'order.manufactured', 'auth.signing-key.published')
+
 async def handle_event(db, event_type, payload):
     if event_type not in ("order.paid", "order.manufactured"):
         raise ValueError("Unsupported delivery fact")

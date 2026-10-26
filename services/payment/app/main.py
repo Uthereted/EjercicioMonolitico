@@ -18,7 +18,7 @@ async def lifespan(app):
             await conn.run_sync(lambda connection, index=index: index.create(connection, checkfirst=True))
     await fetch_public_key()
     tasks = [asyncio.create_task(events.publish_pending_events()),
-             asyncio.create_task(events.consume_events("payment.domain", messaging.handle_event))]
+             asyncio.create_task(events.consume_events("payment.domain", messaging.handle_event, topics=messaging.TOPICS))]
     try:
         yield
     finally:
