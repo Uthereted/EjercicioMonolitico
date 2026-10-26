@@ -5,21 +5,22 @@ from fastapi import FastAPI, Depends, status
 from app.dependencies import get_machine, stop_machine
 from app.async_machine import Machine
 from app.messaging import consume_manufacturing_requests
-from app.auth_verifier import fetch_public_key, listen_for_cert_updates, verify_jwt  # <-- Importar
+from app.auth_verifier import fetch_public_key, listen_for_cert_updates, verify_jwt
 
 @asynccontextmanager
 async def lifespan(app):
     await fetch_public_key()
-    cert_task = asyncio.create_task(listen_for_cert_updates())
-
     machine = await get_machine()
+    cert_task = asyncio.create_task(listen_for_cert_updates())
     consumer = asyncio.create_task(consume_manufacturing_requests(machine))
     try:
         yield
     finally:
-        consumer.cancel()
-        with suppress(asyncio.CancelledError):
-            await consumer
+        for task in (consumer, cert_task):
+            task.cancel()
+        for task in (consumer, cert_task):
+            with suppress(asyncio.CancelledError):
+                await task
         await stop_machine()
 
 

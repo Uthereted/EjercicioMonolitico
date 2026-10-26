@@ -4,6 +4,7 @@ SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:///./orders.db
 CLIENT_SERVICE_URL=http://localhost:13005
 MACHINE_SERVICE_URL=http://localhost:13002
 DELIVERY_SERVICE_URL=http://localhost:13004
+ORDER_SERVICE_AUTH_SECRET=
 
 RABBITMQ_URL=amqp://manufacturing:manufacturing@localhost:5672/
 RABBITMQ_EXCHANGE=manufacturing.events

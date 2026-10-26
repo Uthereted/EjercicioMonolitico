@@ -18,6 +18,7 @@ services:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
       CLIENT_SERVICE_URL: ${CLIENT_SERVICE_URL:-http://host.docker.internal:13005}
+      ORDER_SERVICE_AUTH_SECRET: ${ORDER_SERVICE_AUTH_SECRET:?Use the same secret as client_service}
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://manufacturing:manufacturing@host.docker.internal:5672/}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-manufacturing.events}
       MACHINE_SERVICE_URL: ${MACHINE_SERVICE_URL:-http://host.docker.internal:13002}

@@ -1,3 +1,5 @@
+import os
+import secrets
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -40,6 +42,22 @@ async def login_basic_auth(
     token_payload["client_id"] = client.id if client else None
     jwt_token = crypto.create_jwt_token(token_payload)
     return schemas.TokenResponse(access_token=jwt_token)
+
+
+@router.post("/auth/service-token", response_model=schemas.TokenResponse, tags=["Auth"])
+async def login_order_service(credentials: HTTPBasicCredentials = Depends(security_basic)):
+    """Issue a service identity for background order-to-delivery requests."""
+    secret = os.getenv("ORDER_SERVICE_AUTH_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "Service authentication is not configured")
+    valid_name = secrets.compare_digest(credentials.username.encode(), b"order-service")
+    valid_secret = secrets.compare_digest(credentials.password.encode(), secret.encode())
+    if not (valid_name and valid_secret):
+        raise HTTPException(401, "Invalid service credentials",
+                            headers={"WWW-Authenticate": "Basic"})
+    return schemas.TokenResponse(access_token=crypto.create_jwt_token({
+        "sub": "service:order-service", "service_name": "order-service", "roles": [],
+    }))
 
 
 @router.post("/auth/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED, tags=["Auth"])

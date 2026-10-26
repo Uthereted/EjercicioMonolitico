@@ -24,9 +24,9 @@ async def lifespan(app: FastAPI):
         yield
 
     finally:
-        for task in (consumer_task, retry_task):
+        for task in (consumer_task, retry_task, cert_listener_task):
             task.cancel()
-        for task in (consumer_task, retry_task):
+        for task in (consumer_task, retry_task, cert_listener_task):
             with suppress(asyncio.CancelledError):
                 await task
         await database.engine.dispose()

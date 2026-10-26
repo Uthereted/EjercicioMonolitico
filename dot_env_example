@@ -2,6 +2,10 @@ COMPOSE_PROJECT_NAME=manufacturing-microservices
 
 DELIVERY_DATABASE_URL=sqlite+aiosqlite:////volume/delivery.db
 
+# Shared only by order-service and client_service. Generate with:
+# python -c "import secrets; print(secrets.token_urlsafe(32))"
+ORDER_SERVICE_AUTH_SECRET=
+
 # Local development (Compose uses the rabbitmq service hostname).
 RABBITMQ_URL=amqp://manufacturing:manufacturing@localhost:5672/
 RABBITMQ_EXCHANGE=manufacturing.events

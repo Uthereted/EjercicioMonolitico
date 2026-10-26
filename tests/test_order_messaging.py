@@ -5,6 +5,7 @@ import sys
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+import httpx
 
 os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/order"))
@@ -17,6 +18,51 @@ from app.sql import database, models, schemas
 
 
 class OrderMessagingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_delivery_creation_authenticates_with_service_identity(self):
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            if request.url.path == '/auth/service-token':
+                self.assertTrue(request.headers['Authorization'].startswith('Basic '))
+                return httpx.Response(200, json={'access_token': 'signed-service-token'})
+            self.assertEqual(request.url.path, '/deliveries/delivery')
+            self.assertEqual(request.headers['Authorization'], 'Bearer signed-service-token')
+            return httpx.Response(201, json={'id': 42})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        async with database.SessionLocal() as db:
+            order = await self.create_order(db)
+            order.payment_completed = True
+            await db.commit()
+            with patch.dict(os.environ, {'ORDER_SERVICE_AUTH_SECRET': 'test-only-secret'}):
+                with patch.object(workflow.httpx, 'AsyncClient', return_value=client):
+                    with patch.object(messaging, 'publish_event', new=AsyncMock()):
+                        await workflow.resume_order(db, order)
+            self.assertEqual(order.delivery_id, 42)
+            self.assertIsNone(order.integration_error)
+            self.assertEqual(len(requests), 2)
+
+    async def test_failed_service_auth_keeps_delivery_pending_without_unauthenticated_call(self):
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            return httpx.Response(401, json={'detail': 'Invalid service credentials'})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        async with database.SessionLocal() as db:
+            order = await self.create_order(db)
+            order.payment_completed = True
+            await db.commit()
+            with patch.dict(os.environ, {'ORDER_SERVICE_AUTH_SECRET': 'wrong'}):
+                with patch.object(workflow.httpx, 'AsyncClient', return_value=client):
+                    with patch.object(messaging, 'publish_event', new=AsyncMock()):
+                        await workflow.resume_order(db, order)
+            self.assertIsNone(order.delivery_id)
+            self.assertIn('Delivery creation pending', order.integration_error)
+            self.assertEqual(len(requests), 1)
+
     async def asyncSetUp(self):
         async with database.engine.begin() as conn:
             await conn.run_sync(models.Base.metadata.drop_all)

@@ -18,6 +18,10 @@ def run():
         request("GET", "/api/auth/token", auth=("admin", "incorrect"), expected=401)
         request("GET", "/api/orders", expected=401)
         request("GET", "/api/payments/1/balance", expected=401)
+        request("GET", "/api/machine/status", expected=401)
+        request("GET", "/api/deliveries", expected=401)
+        request("GET", "/api/machine/status", headers={"Authorization": "Bearer invalid"}, expected=401)
+        request("GET", "/api/deliveries", headers={"Authorization": "Bearer invalid"}, expected=401)
         request("GET", "/api/orders", headers={"Authorization": "Bearer invalid"}, expected=401)
 
         # Offset client/user IDs to catch accidental ownership by unrelated IDs.
@@ -35,6 +39,8 @@ def run():
         request("POST", "/api/auth/register", json=user, expected=400)
         token = request("GET", "/api/auth/token", auth=(user["username"], user["password"]))
         headers = {"Authorization": f"Bearer {token['access_token']}"}
+        request("GET", "/api/machine/status", headers=headers)
+        request("GET", "/api/deliveries", headers=headers)
         request("GET", f"/api/payments/{customer['id']}/balance", headers=headers)
         request("POST", f"/api/payments/{customer['id']}/deposit", headers=headers,
                 json={"amount": 10}, expected=201)

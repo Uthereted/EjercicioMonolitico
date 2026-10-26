@@ -176,8 +176,28 @@ Clients keeps a single `POST /clients` route and adds `POST /auth/register`,
 are `/api/auth/register`, `/api/auth/token` and `/api/auth/public-key`.
 Login returns an RS256 JWT valid for one hour. For protected operations, send
 `Authorization: Bearer <access_token>`: creating/listing orders and
-querying/depositing/charging balance. The other routes keep their previous
+querying/depositing/charging balance, all machine operations, and delivery CRUD
+and status changes. Delivery's health endpoint stays public. The other routes keep their previous
 behavior; this integration does not add authentication to every API.
+
+Machine and delivery validate RS256, issuer `manufacturing-client`, audience
+`manufacturing-services` and required claims `exp`, `iat`, `sub`. Missing or invalid
+tokens return 401; an unavailable signing key returns 503. They refresh cached
+keys after a signature failure and on the `client.cert.updated` RabbitMQ event.
+
+Orders authenticates its background delivery-creation requests with its own JWT.
+Set `ORDER_SERVICE_AUTH_SECRET` in `.env` before starting Compose; generate it with
+`python -c "import secrets; print(secrets.token_urlsafe(32))"`. Compose supplies it
+only to orders and client/auth. For separate service launches, configure the same
+secret in both processes. Orders calls `POST /auth/service-token` using HTTP Basic
+username `order-service` and that secret, then sends the returned Bearer token to
+delivery. No user token is stored for background retries. This endpoint refuses
+requests when the secret is absent and does not grant admin roles.
+
+For local JWT regression tests, set `PYTHONPATH` to `services/machine` or
+`services/delivery` and run `python -m unittest discover -s tests -p test_auth_verifier.py -v`.
+Run `tests/test_service_jwt_routes.py` separately with `AUTH_TEST_SERVICE=machine`
+and `AUTH_TEST_SERVICE=delivery`; run `tests/test_service_token.py` for service login.
 
 For local testing, the initial user `admin` with password `admin123` is kept.
 Public registration only creates users with the `user` role. Regular users are

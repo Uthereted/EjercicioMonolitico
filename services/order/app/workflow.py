@@ -61,16 +61,26 @@ async def resume_order(db, order):
 
             if order.delivery_id is None:
                 try:
+                    secret = os.getenv("ORDER_SERVICE_AUTH_SECRET", "")
+                    if not secret:
+                        raise ValueError("ORDER_SERVICE_AUTH_SECRET is not configured")
+                    token_response = await client.post(
+                        f"{CLIENT_URL}/auth/service-token",
+                        auth=httpx.BasicAuth("order-service", secret),
+                    )
+                    token_response.raise_for_status()
+                    access_token = token_response.json()["access_token"]
                     response = await client.post(
                         f"{DELIVERY_URL}/deliveries/delivery",
                         json={"order_id": order.id, "client_id": order.client_id,
                               "address": order.address},
+                        headers={"Authorization": f"Bearer {access_token}"},
                     )
                     response.raise_for_status()
                     order.delivery_id = response.json()["id"]
                     await db.commit()
                     await db.refresh(order)
-                except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+                except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError) as exc:
                     errors.append(f"Delivery creation pending: {exc}")
 
             # Read again: piece events may have arrived during the calls above.

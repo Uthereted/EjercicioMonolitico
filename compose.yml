@@ -31,6 +31,7 @@ services:
         PYTHONUNBUFFERED: 1
         SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
         CLIENT_SERVICE_URL: http://client_service:8000
+        ORDER_SERVICE_AUTH_SECRET: ${ORDER_SERVICE_AUTH_SECRET:?Set ORDER_SERVICE_AUTH_SECRET in .env}
         RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
         RABBITMQ_EXCHANGE: manufacturing.events
         MACHINE_SERVICE_URL: http://machineservice:8000
@@ -49,6 +50,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
+      CLIENT_SERVICE_URL: http://client_service:8000
       RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
@@ -63,6 +65,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       ORDERS_SERVICE_URL: http://order-service:8000
+      CLIENT_SERVICE_URL: http://client_service:8000
       RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
@@ -79,6 +82,7 @@ services:
       - '.services/client/db_volume:/volume'
     environment:
       - PYTHONUNBUFFERED=1
+      - ORDER_SERVICE_AUTH_SECRET=${ORDER_SERVICE_AUTH_SECRET:?Set ORDER_SERVICE_AUTH_SECRET in .env}
       - SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:////volume/client.db
       - RABBITMQ_URL=amqp://manufacturing:manufacturing@rabbitmq:5672/
       - RABBITMQ_EXCHANGE=manufacturing.events
