@@ -17,14 +17,25 @@ RETRY_SECONDS = float(os.getenv("REST_RETRY_SECONDS", "5"))
 locks = defaultdict(asyncio.Lock)
 
 
+async def service_headers(client):
+    secret = os.getenv("ORDER_SERVICE_AUTH_SECRET", "")
+    if not secret:
+        raise ValueError("ORDER_SERVICE_AUTH_SECRET is not configured")
+    response = await client.post(f"{CLIENT_URL}/auth/service-token",
+                                 auth=httpx.BasicAuth("order-service", secret))
+    response.raise_for_status()
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 async def validate_client(client_id):
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.get(f"{CLIENT_URL}/clients/{client_id}")
+            response = await client.get(f"{CLIENT_URL}/clients/{client_id}",
+                                        headers=await service_headers(client))
             if response.status_code == 404:
                 raise HTTPException(404, "Client not found")
             response.raise_for_status()
-    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError) as exc:
         raise HTTPException(503, "Client service is unavailable") from exc
 
 
@@ -61,20 +72,12 @@ async def resume_order(db, order):
 
             if order.delivery_id is None:
                 try:
-                    secret = os.getenv("ORDER_SERVICE_AUTH_SECRET", "")
-                    if not secret:
-                        raise ValueError("ORDER_SERVICE_AUTH_SECRET is not configured")
-                    token_response = await client.post(
-                        f"{CLIENT_URL}/auth/service-token",
-                        auth=httpx.BasicAuth("order-service", secret),
-                    )
-                    token_response.raise_for_status()
-                    access_token = token_response.json()["access_token"]
+                    headers = await service_headers(client)
                     response = await client.post(
                         f"{DELIVERY_URL}/deliveries/delivery",
                         json={"order_id": order.id, "client_id": order.client_id,
                               "address": order.address},
-                        headers={"Authorization": f"Bearer {access_token}"},
+                        headers=headers,
                     )
                     response.raise_for_status()
                     order.delivery_id = response.json()["id"]

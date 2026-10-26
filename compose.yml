@@ -31,7 +31,7 @@ services:
         PYTHONUNBUFFERED: 1
         SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
         CLIENT_SERVICE_URL: http://client_service:8000
-        ORDER_SERVICE_AUTH_SECRET: ${ORDER_SERVICE_AUTH_SECRET:?Set ORDER_SERVICE_AUTH_SECRET in .env}
+        ORDER_SERVICE_AUTH_SECRET: ${ORDER_SERVICE_AUTH_SECRET:-development-order-service-secret-change-me}
         RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
         RABBITMQ_EXCHANGE: manufacturing.events
         MACHINE_SERVICE_URL: http://machineservice:8000
@@ -82,7 +82,8 @@ services:
       - '.services/client/db_volume:/volume'
     environment:
       - PYTHONUNBUFFERED=1
-      - ORDER_SERVICE_AUTH_SECRET=${ORDER_SERVICE_AUTH_SECRET:?Set ORDER_SERVICE_AUTH_SECRET in .env}
+      - ORDER_SERVICE_AUTH_SECRET=${ORDER_SERVICE_AUTH_SECRET:-development-order-service-secret-change-me}
+      - PAYMENT_SERVICE_AUTH_SECRET=${PAYMENT_SERVICE_AUTH_SECRET:-development-payment-service-secret-change-me}
       - SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:////volume/client.db
       - RABBITMQ_URL=amqp://manufacturing:manufacturing@rabbitmq:5672/
       - RABBITMQ_EXCHANGE=manufacturing.events
@@ -102,6 +103,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/payment.db
+      PAYMENT_SERVICE_AUTH_SECRET: ${PAYMENT_SERVICE_AUTH_SECRET:-development-payment-service-secret-change-me}
       CLIENT_SERVICE_URL: http://client_service:8000
       ORDERS_SERVICE_URL: http://order-service:8000
       RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/

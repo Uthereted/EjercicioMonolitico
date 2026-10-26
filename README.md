@@ -186,10 +186,13 @@ tokens return 401; an unavailable signing key returns 503. They refresh cached
 keys after a signature failure and on the `client.cert.updated` RabbitMQ event.
 
 Orders authenticates its background delivery-creation requests with its own JWT.
-Set `ORDER_SERVICE_AUTH_SECRET` in `.env` before starting Compose; generate it with
-`python -c "import secrets; print(secrets.token_urlsafe(32))"`. Compose supplies it
-only to orders and client/auth. For separate service launches, configure the same
-secret in both processes. Orders calls `POST /auth/service-token` using HTTP Basic
+Compose provides development defaults for `ORDER_SERVICE_AUTH_SECRET` and
+`PAYMENT_SERVICE_AUTH_SECRET`, so a fresh checkout can start without setting them.
+Override them in `.env` to use private credentials; generate each with
+`python -c "import secrets; print(secrets.token_urlsafe(32))"`. Orders and payments
+receive separate secrets, also configured in client/auth. For separate service
+launches, configure matching secrets in the corresponding processes.
+Orders calls `POST /auth/service-token` using HTTP Basic
 username `order-service` and that secret, then sends the returned Bearer token to
 delivery. No user token is stored for background retries. This endpoint refuses
 requests when the secret is absent and does not grant admin roles.

@@ -32,7 +32,7 @@ async def _ensure_client_exists(client_id: int):
     """Validates the client exists in the Client service, raising HTTP errors otherwise."""
     try:
         exists = await client_exists(client_id)
-    except (httpx.RequestError, httpx.HTTPStatusError):
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
         raise_and_log_error(
             logger,
             status.HTTP_503_SERVICE_UNAVAILABLE,
