@@ -1,12 +1,12 @@
 import os
 import secrets
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.sql import crud, schemas
-from app import crypto
+from app import crypto, auth_sessions
 from app.auth_verifier import verify_jwt, is_admin, is_client_reader
 
 router = APIRouter()
@@ -19,9 +19,10 @@ async def get_public_key():
     return {"public_key": crypto.get_public_key_pem()}
 
 
-@router.get("/auth/token", response_model=schemas.TokenResponse, tags=["Auth"])
-@router.post("/auth/token", response_model=schemas.TokenResponse, tags=["Auth"])
+@router.get("/auth/token", response_model=schemas.UserTokenResponse, tags=["Auth"])
+@router.post("/auth/token", response_model=schemas.UserTokenResponse, tags=["Auth"])
 async def login_basic_auth(
+        response: Response,
         credentials: HTTPBasicCredentials = Depends(security_basic),
         db: AsyncSession = Depends(get_db)
 ):
@@ -34,16 +35,26 @@ async def login_basic_auth(
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    token_payload = {
-        "sub": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "roles": [r.name for r in user.roles]
-    }
-    client = await crud.get_client_by_email(db, user.email)
-    token_payload["client_id"] = client.id if client else None
-    jwt_token = crypto.create_jwt_token(token_payload)
-    return schemas.TokenResponse(access_token=jwt_token)
+    tokens = await auth_sessions.issue_tokens(db, user)
+    await db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return tokens
+
+
+@router.post("/auth/refresh", response_model=schemas.UserTokenResponse, tags=["Auth"])
+async def refresh_tokens(body: schemas.RefreshTokenRequest, response: Response,
+                         db: AsyncSession = Depends(get_db)):
+    tokens = await auth_sessions.rotate_tokens(db, body.refresh_token)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return tokens
+
+
+@router.post("/auth/logout", status_code=204, tags=["Auth"])
+async def logout(body: schemas.RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    await auth_sessions.logout(db, body.refresh_token)
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/auth/service-token", response_model=schemas.TokenResponse, tags=["Auth"])

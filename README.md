@@ -209,10 +209,29 @@ your client with Bearer authentication, then request a fresh token to include th
 new `client_id` for orders/payments. Registration and the public-key endpoint stay
 public; obtaining a token always requires valid Basic credentials.
 
-Bruno includes `Auth / Request token` and `Client / List clients`. Select the
+User login now returns `access_token`, `refresh_token`, `token_type`,
+`expires_in` (3600 seconds) and `refresh_expires_in` (seven days on login).
+`POST /auth/refresh` accepts JSON `{"refresh_token":"..."}` without Basic or an
+access token and returns a new pair. Save both new values: each refresh is single
+use. Refresh sessions have an absolute seven-day lifetime from login; rotation
+does not extend it. Reusing a consumed refresh token revokes that login's entire
+refresh session, including its latest token. Serialize refresh calls in clients.
+`POST /auth/logout` accepts the same JSON and revokes that refresh session.
+Already issued access JWTs remain valid until expiry; logout prevents renewal.
+The gateway paths are `/api/auth/refresh` and `/api/auth/logout`.
+
+Refresh tokens are random opaque values, stored only as SHA-256 hashes in the
+`refresh_tokens` table in the existing client database. Startup creates that new
+table without deleting existing data. Sessions persist across restarts and
+renew with the current user roles, client association and signing key. Service
+tokens still use service credentials and do not receive refresh tokens.
+
+Bruno includes `Auth / Request token`, `Auth / Refresh token`, `Auth / Logout`
+and `Client / List clients`. Select the
 `Gateway` environment, set `authUsername` and secret `authPassword`, then run
-`Request token`; it stores the JWT as runtime variable `accessToken` for the
-client folder's Bearer authentication.
+`Request token`; it stores runtime variables `accessToken` and `refreshToken`.
+`Refresh token` replaces both, and `Logout` clears them after revoking the session.
+The client folder inherits Bearer authentication from `accessToken`.
 
 For local JWT regression tests, set `PYTHONPATH` to `services/machine` or
 `services/delivery` and run `python -m unittest discover -s tests -p test_auth_verifier.py -v`.

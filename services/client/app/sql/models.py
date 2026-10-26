@@ -31,3 +31,14 @@ class Client(Base):
     name = Column(String(256), nullable=False)
     email = Column(String(256), unique=True, nullable=False)
     creation_date = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    token_hash = Column(String(64), primary_key=True)
+    family_id = Column(String(36), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Naive UTC timestamps keep SQLite comparisons consistent across restarts.
+    expires_at = Column(DateTime, nullable=False, index=True)
+    consumed_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)

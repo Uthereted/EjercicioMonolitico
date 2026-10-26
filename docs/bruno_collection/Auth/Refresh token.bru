@@ -1,0 +1,30 @@
+meta {
+  name: Refresh token
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{gatewayURL}}/api/auth/refresh
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "refresh_token": "{{refreshToken}}"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("accessToken", res.getBody().access_token);
+    bru.setVar("refreshToken", res.getBody().refresh_token);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.access_token: isNotEmpty
+  res.body.refresh_token: isNotEmpty
+}

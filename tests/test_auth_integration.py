@@ -11,7 +11,7 @@ def run():
         def request(method, path, expected=200, **kwargs):
             response = client.request(method, path, **kwargs)
             assert response.status_code == expected, (path, response.status_code, response.text)
-            return response.json()
+            return response.json() if response.status_code != 204 else None
 
         request("GET", "/api/auth/public-key")
         request("GET", "/api/auth/token", expected=401)
@@ -47,7 +47,9 @@ def run():
         request("POST", "/api/auth/register", json=user, expected=201)
         request("POST", "/api/auth/register", json=user, expected=400)
         token = request("POST", "/api/auth/token", auth=(user["username"], user["password"]))
-        headers = {"Authorization": f"Bearer {token['access_token']}"}
+        renewed = request("POST", "/api/auth/refresh", json={"refresh_token": token["refresh_token"]})
+        assert renewed["refresh_token"] != token["refresh_token"]
+        headers = {"Authorization": f"Bearer {renewed['access_token']}"}
         request("GET", f"/api/clients/{customer['id']}", headers=headers)
         request("GET", f"/api/clients/{other['id']}", headers=headers, expected=403)
         own_clients = request("GET", "/api/clients", headers=headers)
@@ -62,7 +64,13 @@ def run():
         request("GET", "/api/payments/1/balance", headers=headers, expected=403)
         request("POST", "/api/orders", headers=headers, expected=403,
                 json={"client_id": 1, "number_of_pieces": 1, "address": "Madrid"})
-        print("PASS auth: Basic GET/POST login, client JWT protection and ownership, machine/delivery JWT", flush=True)
+        # Reuse of a consumed refresh revokes the entire login session.
+        request("POST", "/api/auth/refresh", json={"refresh_token": token["refresh_token"]}, expected=401)
+        request("POST", "/api/auth/refresh", json={"refresh_token": renewed["refresh_token"]}, expected=401)
+        logout_session = request("POST", "/api/auth/token", auth=(user["username"], user["password"]))
+        request("POST", "/api/auth/logout", json={"refresh_token": logout_session["refresh_token"]}, expected=204)
+        request("POST", "/api/auth/refresh", json={"refresh_token": logout_session["refresh_token"]}, expected=401)
+        print("PASS auth: login, refresh rotation/replay/logout, client permissions, machine/delivery JWT", flush=True)
 
 
 if __name__ == "__main__":

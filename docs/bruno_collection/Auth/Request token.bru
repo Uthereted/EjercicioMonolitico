@@ -18,6 +18,7 @@ auth:basic {
 script:post-response {
   if (res.getStatus() === 200) {
     bru.setVar("accessToken", res.getBody().access_token);
+    bru.setVar("refreshToken", res.getBody().refresh_token);
   }
 }
 
@@ -25,4 +26,5 @@ assert {
   res.status: eq 200
   res.body.access_token: isNotEmpty
   res.body.token_type: eq bearer
+  res.body.refresh_token: isNotEmpty
 }
