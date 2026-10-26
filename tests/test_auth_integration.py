@@ -23,22 +23,37 @@ def run():
         request("GET", "/api/machine/status", headers={"Authorization": "Bearer invalid"}, expected=401)
         request("GET", "/api/deliveries", headers={"Authorization": "Bearer invalid"}, expected=401)
         request("GET", "/api/orders", headers={"Authorization": "Bearer invalid"}, expected=401)
+        for method, path, body in (("GET", "/api/clients", None), ("GET", "/api/clients/1", None),
+                                   ("POST", "/api/clients", {"name": "Anonymous", "email": "anonymous@example.org"})):
+            request(method, path, json=body, expected=401)
+            request(method, path, json=body, headers={"Authorization": "Bearer invalid"}, expected=401)
+        request("POST", "/api/auth/token", expected=401)
+        request("POST", "/api/auth/token", auth=("admin", "incorrect"), expected=401)
+        admin_token = request("POST", "/api/auth/token", auth=(
+            os.getenv("TEST_AUTH_USERNAME", "admin"), os.getenv("TEST_AUTH_PASSWORD", "admin123")))
+        admin_headers = {"Authorization": f"Bearer {admin_token['access_token']}"}
 
         # Offset client/user IDs to catch accidental ownership by unrelated IDs.
         for _ in range(2):
-            request("POST", "/api/clients", expected=201, json={
+            other = request("POST", "/api/clients", headers=admin_headers, expected=201, json={
                 "name": "Auth regression", "email": f"offset-{uuid.uuid4().hex}@example.org",
             })
         identity = uuid.uuid4().hex
         email = f"auth-{identity}@example.org"
-        customer = request("POST", "/api/clients", expected=201,
+        customer = request("POST", "/api/clients", headers=admin_headers, expected=201,
                            json={"name": "Usuario de prueba auth", "email": email})
         user = {"username": f"test-{identity}", "email": email, "password": uuid.uuid4().hex}
         request("POST", "/api/auth/register", json={**user, "roles": ["admin"]}, expected=400)
         request("POST", "/api/auth/register", json=user, expected=201)
         request("POST", "/api/auth/register", json=user, expected=400)
-        token = request("GET", "/api/auth/token", auth=(user["username"], user["password"]))
+        token = request("POST", "/api/auth/token", auth=(user["username"], user["password"]))
         headers = {"Authorization": f"Bearer {token['access_token']}"}
+        request("GET", f"/api/clients/{customer['id']}", headers=headers)
+        request("GET", f"/api/clients/{other['id']}", headers=headers, expected=403)
+        own_clients = request("GET", "/api/clients", headers=headers)
+        assert [row['id'] for row in own_clients] == [customer['id']], own_clients
+        request("POST", "/api/clients", headers=headers, expected=403,
+                json={"name": "Other", "email": f"other-{identity}@example.org"})
         request("GET", "/api/machine/status", headers=headers)
         request("GET", "/api/deliveries", headers=headers)
         request("GET", f"/api/payments/{customer['id']}/balance", headers=headers)
@@ -47,7 +62,7 @@ def run():
         request("GET", "/api/payments/1/balance", headers=headers, expected=403)
         request("POST", "/api/orders", headers=headers, expected=403,
                 json={"client_id": 1, "number_of_pieces": 1, "address": "Madrid"})
-        print("PASS auth: unique client route, Basic login, register, JWT rejection and client ownership", flush=True)
+        print("PASS auth: Basic GET/POST login, client JWT protection and ownership, machine/delivery JWT", flush=True)
 
 
 if __name__ == "__main__":

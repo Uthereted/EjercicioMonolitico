@@ -1,0 +1,28 @@
+meta {
+  name: Request token
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{gatewayURL}}/api/auth/token
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: {{authUsername}}
+  password: {{authPassword}}
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    bru.setVar("accessToken", res.getBody().access_token);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.access_token: isNotEmpty
+  res.body.token_type: eq bearer
+}

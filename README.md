@@ -172,10 +172,10 @@ Other endpoints of the stack:
 ### Authentication after the merge
 
 Clients keeps a single `POST /clients` route and adds `POST /auth/register`,
-`GET /auth/token` (HTTP Basic) and `GET /auth/public-key`. In the gateway they
+`POST /auth/token` (HTTP Basic; `GET` remains compatible) and `GET /auth/public-key`. In the gateway they
 are `/api/auth/register`, `/api/auth/token` and `/api/auth/public-key`.
 Login returns an RS256 JWT valid for one hour. For protected operations, send
-`Authorization: Bearer <access_token>`: creating/listing orders and
+`Authorization: Bearer <access_token>`: creating/reading/listing clients, creating/listing orders and
 querying/depositing/charging balance, all machine operations, and delivery CRUD
 and status changes. Delivery's health endpoint stays public. The other routes keep their previous
 behavior; this integration does not add authentication to every API.
@@ -196,6 +196,23 @@ Orders calls `POST /auth/service-token` using HTTP Basic
 username `order-service` and that secret, then sends the returned Bearer token to
 delivery. No user token is stored for background retries. This endpoint refuses
 requests when the secret is absent and does not grant admin roles.
+
+Payments obtains its own token at the same endpoint with username `payment-service`
+and `PAYMENT_SERVICE_AUTH_SECRET` before checking that a client exists. The named
+order and payment service identities can read an individual client, but cannot
+create clients or list the directory.
+
+Users may create a client only for the email in their signed token, read that
+client, and list only their own client. Admins may create and read all clients.
+For self-registration: register, request a token with Basic credentials, create
+your client with Bearer authentication, then request a fresh token to include the
+new `client_id` for orders/payments. Registration and the public-key endpoint stay
+public; obtaining a token always requires valid Basic credentials.
+
+Bruno includes `Auth / Request token` and `Client / List clients`. Select the
+`Gateway` environment, set `authUsername` and secret `authPassword`, then run
+`Request token`; it stores the JWT as runtime variable `accessToken` for the
+client folder's Bearer authentication.
 
 For local JWT regression tests, set `PYTHONPATH` to `services/machine` or
 `services/delivery` and run `python -m unittest discover -s tests -p test_auth_verifier.py -v`.
@@ -234,7 +251,7 @@ between services still use the Docker network.
 | --- | --- | --- |
 | Gateway status | GET | `/health` |
 | Register user | POST | `/api/auth/register` |
-| Get token | GET | `/api/auth/token` |
+| Get token (HTTP Basic) | POST / GET | `/api/auth/token` |
 | Get public key | GET | `/api/auth/public-key` |
 | Create / list clients | POST / GET | `/api/clients` |
 | Get client | GET | `/api/clients/{id}` |
