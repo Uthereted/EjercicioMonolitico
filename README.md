@@ -1,120 +1,139 @@
 # Manufacturing Microservices
 
-El proyecto está dividido en cinco microservicios FastAPI: pedidos, máquinas,
-entregas, clientes y pagos. Cada servicio tiene su propio código, contenedor,
-Dockerfile y `requirements.txt`.
+The project is split into five FastAPI microservices: orders, machines,
+deliveries, clients and payments. Each service has its own code, container,
+Dockerfile and `requirements.txt`.
 
-## Estructura
+## Quick start
+
+```bash
+git clone <repository-url>
+cd EjercicioMonolitico
+cp dot_env_example .env
+docker compose up -d --build
+curl http://localhost:8080/health
+```
+
+Once the containers are up, the whole system is reachable through the API
+Gateway at **http://localhost:8080** (see [API Gateway](#api-gateway)).
+
+## Structure
 
 ```text
 services/
-├── client/       # Clientes
-├── delivery/     # Entregas
-├── machine/      # Máquinas y cola de fabricación
-├── order/        # Pedidos y piezas
-└── payment/      # Pagos
-haproxy/          # Configuración del gateway
-compose.yml       # Ejecución conjunta
-dot_env_example   # Variables de entorno de ejemplo
+├── client/       # Clients
+├── delivery/     # Deliveries
+├── machine/      # Machines and manufacturing queue
+├── order/        # Orders and pieces
+└── payment/      # Payments
+haproxy/          # Gateway configuration
+compose.yml       # Run everything together
+dot_env_example   # Example environment variables
+tests/            # Messaging, auth and end-to-end workflow tests
+docs/             # Historical documentation (original application)
 ```
 
-Cada carpeta de servicio contiene su código en `app/`, su Dockerfile y su
-`requirements.txt` con las dependencias que utiliza.
-Los servicios usan `entrypoint.sh` y Hypercorn, salvo máquinas, que mantiene
-`main.py` en su raíz y arranca con Uvicorn.
+Each service folder contains its code in `app/`, its Dockerfile and its
+`requirements.txt` with the dependencies it uses.
+The services use `entrypoint.sh` and Hypercorn, except machines, which keeps
+`main.py` in its root and starts with Uvicorn.
 
-Pedidos incluye un Compose independiente en `services/order/compose.yml`,
-su volumen en `services/order/db_volume/` y documentación en `services/order/docs/`.
-Clientes utiliza `db_volume/`, entregas `delivery_volume/` y pagos
-`payment_db_volume/`. Las bases se crean automáticamente al arrancar si no existen.
+Orders includes a standalone Compose file at `services/order/compose.yml`,
+its volume in `services/order/db_volume/` and documentation in
+`services/order/docs/`. Clients uses `db_volume/`, deliveries uses
+`delivery_volume/` and payments uses `payment_db_volume/`. The databases
+(SQLite) are created automatically on startup if they do not exist.
 
-## Chasis compartido
+## Shared chassis
 
-El chasis reúne utilidades de infraestructura compartidas por los servicios:
+The chassis gathers infrastructure utilities shared by the services:
 
-| Utilidad | Servicios |
+| Utility | Services |
 | --- | --- |
-| Logs y `GET /health` | Pedidos y pagos |
-| Sesión de base de datos por petición (`create_db_dependency`) | Clientes, entregas, pedidos y pagos |
-| Publicación JSON persistente en RabbitMQ (`publish_json_event`) | Pedidos, pagos y entregas |
-| Construcción de mensajes JSON (`create_json_message`) | Publicador de eventos pendientes de pedidos |
+| Logs and `GET /health` | Orders and payments |
+| Per-request database session (`create_db_dependency`) | Clients, deliveries, orders and payments |
+| Persistent JSON publishing to RabbitMQ (`publish_json_event`) | Orders, payments and deliveries |
+| JSON message construction (`create_json_message`) | Pending-event publisher of orders |
 
-La verificación JWT permanece en el proyecto, en pedidos y pagos.
-El chasis no contiene modelos, reglas de negocio ni commits de base de datos.
-La publicación confirma el envío y prepara la cola antes de enviar; los servicios
-siguen gestionando los reintentos y marcando los eventos como publicados.
+JWT verification stays in this project, in orders and payments.
+The chassis contains no models, business rules or database commits.
+Publishing waits for the broker's confirmation and prepares the queue before
+sending; the services still handle retries and mark events as published.
 
-El chasis vive en un repositorio independiente:
+The chassis lives in a separate repository:
 [chasis_homework](https://github.com/Uthereted/chasis_homework).
-Los requisitos de clientes, entregas, pedidos y pagos lo descargan de GitHub. Solo
-es necesario clonar este proyecto; no hace falta una carpeta local del chasis.
+The requirements of clients, deliveries, orders and payments download it from
+GitHub. You only need to clone this project; no local chassis folder is
+required.
 
-Pedidos y pagos importan `configure_logging` y `create_health_router` desde
-`my_chassis`. Las sesiones se importan de `my_chassis.database` y los publicadores
-de `my_chassis.messaging`. No hace falta arrancar una aplicación de chasis: es una librería
-instalada en cada servicio. El repositorio separado contiene las funciones,
-la configuración de instalación y un README de uso.
+Orders and payments import `configure_logging` and `create_health_router` from
+`my_chassis`. Sessions are imported from `my_chassis.database` and publishers
+from `my_chassis.messaging`. There is no chassis application to start: it is a
+library installed in each service. The separate repository contains the
+functions, the installation configuration and a usage README.
 
-Para comprobarlo después de reconstruir y arrancar los servicios:
+To check it after rebuilding and starting the services:
 
 ```bash
 curl http://localhost:13001/health
 curl http://localhost:13006/health
 ```
 
-El primer endpoint devuelve `{"status":"ok","service":"order-service"}` y el
-segundo `{"status":"ok","service":"payment-service"}`. No comprueban la base
-de datos ni RabbitMQ. El `/health` del gateway en el puerto 8080 es independiente.
+The first endpoint returns `{"status":"ok","service":"order-service"}` and the
+second `{"status":"ok","service":"payment-service"}`. They do not check the
+database or RabbitMQ. The gateway's `/health` on port 8080 is independent.
 
-La dependencia utiliza la rama `main` del chasis. Después de subir cambios al
-chasis, ejecutar `docker compose build --no-cache order-service paymentservice delivery client_service`
-y `docker compose up -d order-service paymentservice delivery client_service` para reinstalarlo.
+The dependency uses the chassis `main` branch. After pushing changes to the
+chassis, run
+`docker compose build --no-cache order-service paymentservice delivery client_service`
+and `docker compose up -d order-service paymentservice delivery client_service`
+to reinstall it.
 
-## Dependencias e imágenes Docker
+## Dependencies and Docker images
 
-Cada microservicio instala las librerías de su propio `requirements.txt`.
-Docker reutiliza la capa de instalación mientras no cambien ese archivo, la
-imagen Python o las instrucciones anteriores del Dockerfile. Cambiar únicamente
-el código no requiere reinstalar las dependencias. Evitar `--no-cache` y conservar
-la caché de Docker permite aprovechar esta reutilización.
+Each microservice installs the libraries from its own `requirements.txt`.
+Docker reuses the installation layer as long as that file, the Python image or
+the preceding Dockerfile instructions do not change. Changing only the code
+does not require reinstalling the dependencies. Avoiding `--no-cache` and
+keeping the Docker cache lets you take advantage of this reuse.
 
-Clientes, entregas, pedidos y pagos instalan `microservice_chassis` desde GitHub.
-Los servicios que publican eventos seleccionan el extra `[messaging]`.
-Python lo importa como `my_chassis`.
-Los Dockerfile incluyen Git y certificados para descargarlo durante la construcción.
-En otro PC, clonar este repositorio, copiar `dot_env_example` a `.env` y ejecutar
-`docker compose up -d --build`. Fuera de Docker, instalar Git y ejecutar
-`python -m pip install -r requirements.txt` desde la carpeta del servicio.
-`email-validator` es necesario para los correos de clientes.
-`SQLAlchemy[asyncio]` incluye `greenlet`, necesario para el acceso asíncrono
-a las bases de datos.
+Clients, deliveries, orders and payments install `microservice_chassis` from
+GitHub. Services that publish events select the `[messaging]` extra.
+Python imports it as `my_chassis`.
+The Dockerfiles include Git and certificates to download it during the build.
+On another PC, clone this repository, copy `dot_env_example` to `.env` and run
+`docker compose up -d --build`. Outside Docker, install Git and run
+`python -m pip install -r requirements.txt` from the service folder.
+`email-validator` is required for client emails.
+`SQLAlchemy[asyncio]` includes `greenlet`, which is required for asynchronous
+database access.
 
-Para construir todos los servicios:
+To build all services:
 
 ```bash
 docker compose build
 ```
 
-Para reconstruir y arrancar solo pedidos después de cambiar su código:
+To rebuild and start only orders after changing its code:
 
 ```bash
 docker compose up -d --build --no-deps order-service
 ```
 
-Si se modifican las librerías de un servicio, reconstruir su imagen con
-`docker compose up -d --build --no-deps <nombre-del-servicio>`.
+If a service's libraries are modified, rebuild its image with
+`docker compose up -d --build --no-deps <service-name>`.
 
-## Ejecutar con Docker Compose
+## Running with Docker Compose
 
-Desde la raíz del repositorio, copiar el archivo de ejemplo a `.env` si todavía
-no existe. En PowerShell:
+From the repository root, copy the example file to `.env` if it does not exist
+yet. In PowerShell:
 
 ```powershell
 if (!(Test-Path .env)) { Copy-Item dot_env_example .env }
 docker compose up -d --build
 ```
 
-Para validar la configuración, consultar los contenedores o detenerlos:
+To validate the configuration, list the containers or stop them:
 
 ```bash
 docker compose config
@@ -122,140 +141,157 @@ docker compose ps
 docker compose down
 ```
 
-Para ejecutar únicamente pedidos:
+To run only orders:
 
 ```bash
 docker compose -f services/order/compose.yml up -d --build
 ```
 
-## Acceso a los servicios
+## Accessing the services
 
-| Servicio | Nombre en Compose | Puerto local | Documentación API |
+| Service | Compose name | Local port | API documentation |
 | --- | --- | --- | --- |
-| Pedidos | `order-service` | 13001 | http://localhost:13001/docs |
-| Máquinas | `machineservice` | 13002 | http://localhost:13002/docs |
-| Entregas | `delivery` | 13004 | http://localhost:13004/docs |
-| Clientes | `client_service` | 13005 | http://localhost:13005/client |
-| Pagos | `paymentservice` | 13006 | http://localhost:13006/payment |
+| Orders | `order-service` | 13001 | http://localhost:13001/docs |
+| Machines | `machineservice` | 13002 | http://localhost:13002/docs |
+| Deliveries | `delivery` | 13004 | http://localhost:13004/docs |
+| Clients | `client_service` | 13005 | http://localhost:13005/client |
+| Payments | `paymentservice` | 13006 | http://localhost:13006/payment |
+
+Other endpoints of the stack:
+
+| Component | URL | Credentials |
+| --- | --- | --- |
+| API Gateway (HTTP) | http://localhost:8080 | — |
+| API Gateway (HTTPS) | https://localhost:8443 | — |
+| HAProxy stats | http://localhost:8404 | `admin` / `admin` |
+| RabbitMQ management | http://localhost:15672 | `manufacturing` / `manufacturing` |
+| RabbitMQ (AMQP) | `localhost:5672` | `manufacturing` / `manufacturing` |
 
 ## API Gateway
 
-### Autenticación tras el merge
+### Authentication after the merge
 
-Clientes conserva una única ruta `POST /clients` y añade `POST /auth/register`,
-`GET /auth/token` (HTTP Basic) y `GET /auth/public-key`. En el gateway son
-`/api/auth/register`, `/api/auth/token` y `/api/auth/public-key`.
-El login devuelve un JWT RS256 válido durante una hora. Para las operaciones
-protegidas, enviar `Authorization: Bearer <access_token>`: crear/listar pedidos
-y consultar/ingresar/cobrar saldo. Las demás rutas mantienen su comportamiento
-anterior; esta integración no añade autenticación a todas las APIs.
+Clients keeps a single `POST /clients` route and adds `POST /auth/register`,
+`GET /auth/token` (HTTP Basic) and `GET /auth/public-key`. In the gateway they
+are `/api/auth/register`, `/api/auth/token` and `/api/auth/public-key`.
+Login returns an RS256 JWT valid for one hour. For protected operations, send
+`Authorization: Bearer <access_token>`: creating/listing orders and
+querying/depositing/charging balance. The other routes keep their previous
+behavior; this integration does not add authentication to every API.
 
-Para las pruebas locales se conserva el usuario inicial `admin` con contraseña
-`admin123`. El registro público solo crea usuarios con rol `user`. Los usuarios
-normales se asocian al cliente con su mismo email al obtener el token; los IDs
-de las tablas de usuarios y clientes son independientes. Esto es autenticación
-de desarrollo: el registro no verifica la propiedad del correo.
+For local testing, the initial user `admin` with password `admin123` is kept.
+Public registration only creates users with the `user` role. Regular users are
+linked to the client with the same email when the token is obtained; the IDs of
+the users and clients tables are independent. This is development-grade
+authentication: registration does not verify ownership of the email address.
 
-Clientes genera la clave de firma al arrancar y publica `client.cert.updated`.
-Pedidos y pagos reciben ese aviso en colas exclusivas separadas de `order.events`
-y actualizan la clave pública; también la recuperan al detectar una firma antigua.
-Reiniciar clientes invalida los tokens anteriores: hay que iniciar sesión otra vez.
-El consumidor dedicado de `order.events` sigue siendo el único que procesa
-los eventos de piezas y entregas.
+Clients generates the signing key on startup and publishes
+`client.cert.updated`. Orders and payments receive that notice on separate
+exclusive queues, distinct from `order.events`, and update the public key; they
+also fetch it again when they detect an old signature. Restarting clients
+invalidates the previous tokens: you must log in again.
+The dedicated `order.events` consumer remains the only one that processes
+piece and delivery events.
 
-El gateway también escucha en `https://localhost:8443` con el certificado local
-de `haproxy/gateway.pem`. Para pruebas HTTP se mantiene el puerto 8080.
+The gateway also listens on `https://localhost:8443` with the local certificate
+from `haproxy/gateway.pem`. Port 8080 is kept for HTTP tests.
 
-Las pruebas `tests/test_auth_integration.py` y `tests/test_workflow_integration.py`
-usan el gateway indicado por `API_BASE_URL` (por defecto `http://localhost:8080`).
-La segunda obtiene primero un token; permite cambiar las credenciales con
-`TEST_AUTH_USERNAME` y `TEST_AUTH_PASSWORD`. `tests/test_auth_verifier.py` se
-ejecuta por separado en los entornos de pedidos y pagos.
+The tests `tests/test_auth_integration.py` and
+`tests/test_workflow_integration.py` use the gateway given by `API_BASE_URL`
+(default `http://localhost:8080`). The second one obtains a token first; the
+credentials can be changed with `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD`.
+`tests/test_auth_verifier.py` is run separately in the orders and payments
+environments.
 
-HAProxy permite acceder a los cinco servicios mediante **http://localhost:8080**.
-Los puertos individuales de la tabla se conservan para depuración. Las llamadas
-internas entre servicios siguen usando la red Docker.
+HAProxy gives access to the five services through **http://localhost:8080**.
+The individual ports in the table are kept for debugging. Internal calls
+between services still use the Docker network.
 
-| Operación | Método | Ruta en el gateway |
+| Operation | Method | Gateway route |
 | --- | --- | --- |
-| Estado del gateway | GET | `/health` |
-| Crear / listar clientes | POST / GET | `/api/clients` |
-| Consultar cliente | GET | `/api/clients/{id}` |
-| Ingresar saldo | POST | `/api/payments/{client_id}/deposit` |
-| Consultar saldo | GET | `/api/payments/{client_id}/balance` |
-| Crear / listar pedidos | POST / GET | `/api/orders` |
-| Consultar pedido | GET | `/api/orders/{id}` |
-| Consultar piezas del pedido | GET | `/api/orders/{id}/pieces` |
-| Reintentar pedido pendiente | POST | `/api/orders/{id}/retry` |
-| Consultar piezas | GET | `/api/pieces` |
-| Consultar máquina | GET | `/api/machine/status` |
-| Crear / listar entregas | POST / GET | `/api/deliveries` |
-| Consultar entrega | GET | `/api/deliveries/{id}` |
-| Actualizar entrega | PATCH | `/api/deliveries/{id}/status` |
+| Gateway status | GET | `/health` |
+| Register user | POST | `/api/auth/register` |
+| Get token | GET | `/api/auth/token` |
+| Get public key | GET | `/api/auth/public-key` |
+| Create / list clients | POST / GET | `/api/clients` |
+| Get client | GET | `/api/clients/{id}` |
+| Deposit balance | POST | `/api/payments/{client_id}/deposit` |
+| Get balance | GET | `/api/payments/{client_id}/balance` |
+| Create / list orders | POST / GET | `/api/orders` |
+| Get order | GET | `/api/orders/{id}` |
+| Get order pieces | GET | `/api/orders/{id}/pieces` |
+| Retry pending order | POST | `/api/orders/{id}/retry` |
+| Get pieces | GET | `/api/pieces` |
+| Get machine status | GET | `/api/machine/status` |
+| Create / list deliveries | POST / GET | `/api/deliveries` |
+| Get delivery | GET | `/api/deliveries/{id}` |
+| Update delivery | PATCH | `/api/deliveries/{id}/status` |
 
-Los cuerpos JSON y los estados son los mismos que en las APIs de los servicios.
-Por ejemplo, una entrega se completa con `{"status":"Delivered"}`.
-Las URLs anteriores `/api/order/order` y `/api/delivery/delivery` siguen disponibles.
-Las rutas desconocidas devuelven 404. `/health` confirma que el gateway está activo;
-la disponibilidad de cada servicio se comprueba con sus peticiones y con las
-estadísticas de HAProxy en http://localhost:8404 (usuario y contraseña `admin`).
-La documentación Swagger continúa en los puertos individuales de la tabla.
+JSON bodies and statuses are the same as in the services' own APIs.
+For example, a delivery is completed with `{"status":"Delivered"}`.
+The older URLs `/api/order/order` and `/api/delivery/delivery` remain available.
+Unknown routes return 404. `/health` confirms that the gateway is up;
+the availability of each service is checked through its requests and through
+the HAProxy statistics at http://localhost:8404 (user and password `admin`).
+The Swagger documentation remains on the individual ports in the table.
 
-### Probar el flujo manualmente
+### Testing the flow manually
 
-Con Docker Desktop abierto, ejecutar desde la raíz del repositorio:
+With Docker Desktop open, run from the repository root:
 
 ```powershell
 docker compose up -d
 docker compose restart haproxy
 ```
 
-Si todavía no se han construido las imágenes, usar `docker compose up -d --build`
-en el primer comando.
+If the images have not been built yet, use `docker compose up -d --build` in
+the first command.
 
-Desde Postman o Bruno, usar `http://localhost:8080` como URL base y
-`Content-Type: application/json` en las peticiones con cuerpo. Guardar los
-identificadores que devuelva cada respuesta:
+From Postman or Bruno, use `http://localhost:8080` as the base URL and
+`Content-Type: application/json` on requests with a body. Save the identifiers
+returned by each response:
 
-1. **Crear cliente:** `POST /api/clients`.
+1. **Create client:** `POST /api/clients`.
 
    ```json
-   {"name":"Cliente de prueba","email":"prueba@example.org"}
+   {"name":"Test client","email":"test@example.org"}
    ```
 
-2. **Ingresar saldo:** `POST /api/payments/{client_id}/deposit`.
+2. **Deposit balance:** `POST /api/payments/{client_id}/deposit`.
 
    ```json
    {"amount":100}
    ```
 
-3. **Crear pedido:** `POST /api/orders`. Sustituir `client_id` por el del cliente.
+3. **Create order:** `POST /api/orders`. Replace `client_id` with the client's ID.
 
    ```json
    {
      "client_id":1,
      "number_of_pieces":3,
-     "description":"Prueba manual",
+     "description":"Manual test",
      "address":"Calle Mayor 10"
    }
    ```
 
-4. **Consultar fabricación:** `GET /api/orders/{order_id}` y
-   `GET /api/orders/{order_id}/pieces`. Esperar a que el pedido sea
-   `ReadyForDelivery` y las tres piezas sean `Manufactured`.
-   El pedido devuelve el `delivery_id`.
-5. **Completar entrega:** `PATCH /api/deliveries/{delivery_id}/status`.
+4. **Check manufacturing:** `GET /api/orders/{order_id}` and
+   `GET /api/orders/{order_id}/pieces`. Wait until the order is
+   `ReadyForDelivery` and the three pieces are `Manufactured`.
+   The order returns the `delivery_id`.
+5. **Complete delivery:** `PATCH /api/deliveries/{delivery_id}/status`.
 
    ```json
-   {"status":"Delivered","tracking_number":"PRUEBA-001"}
+   {"status":"Delivered","tracking_number":"TEST-001"}
    ```
 
-6. **Comprobar resultado:** `GET /api/orders/{order_id}` debe devolver
-   `Delivered`, y `GET /api/payments/{client_id}/balance` debe devolver saldo **70**.
+6. **Verify the result:** `GET /api/orders/{order_id}` must return
+   `Delivered`, and `GET /api/payments/{client_id}/balance` must return a
+   balance of **70**.
 
-El precio es 10 unidades por pieza. Usar un email diferente al crear otro cliente.
+The price is 10 units per piece. Use a different email when creating another
+client.
 
-Para consultar el gateway o diagnosticar un fallo:
+To query the gateway or diagnose a failure:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/health
@@ -263,10 +299,10 @@ Invoke-RestMethod http://localhost:8080/api/orders
 docker compose logs --tail=100 haproxy
 ```
 
-## Desarrollo local
+## Local development
 
-Crear un entorno virtual e instalar las dependencias del microservicio que se
-quiera ejecutar. Usar su carpeta como directorio de trabajo, por ejemplo
+Create a virtual environment and install the dependencies of the microservice
+you want to run. Use its folder as the working directory, for example
 `services/order`.
 
 ```bash
@@ -275,37 +311,38 @@ pip install -r requirements.txt
 hypercorn app.main:app --bind 0.0.0.0:8000
 ```
 
-Configurar `SQLALCHEMY_DATABASE_URL` cuando se necesite una base de datos distinta
-de la local por defecto. El ejemplo de pedidos está en
-`services/order/dot_env_example`.
+Set `SQLALCHEMY_DATABASE_URL` when you need a database other than the default
+local one. The orders example is in `services/order/dot_env_example`.
 
-Para máquinas, ejecutar desde `services/machine`:
+For machines, run from `services/machine`:
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-## Pruebas API y documentación histórica
+## API tests and historical documentation
 
-La colección Bruno de pedidos está en `services/order/docs/bruno_collection/`.
-El entorno `Docker Compose` utiliza el puerto `13001`.
-Antes de crear un pedido, registrar el cliente, ingresar saldo y configurar
-`clientId` en el entorno Bruno. El ejemplo de cinco piezas requiere 50 unidades.
-La consulta de máquinas utiliza `machineURL`. El ejemplo de actualización a
-`Finished` requiere que todas las piezas estén fabricadas; la eliminación de
-un pedido del flujo devuelve 409.
-El entorno Bruno `API Gateway` permite ejecutar la colección por el puerto `8080`.
+The orders Bruno collection is in `services/order/docs/bruno_collection/`.
+The `Docker Compose` environment uses port `13001`.
+Before creating an order, register the client, deposit balance and set
+`clientId` in the Bruno environment. The five-piece example requires 50 units.
+The machine query uses `machineURL`. The example that updates an order to
+`Finished` requires all pieces to be manufactured; deleting an order that is
+part of the flow returns 409.
+The `API Gateway` Bruno environment lets you run the collection through port
+`8080`.
 
-La carpeta raíz `docs/` y los diagramas UML heredados conservan documentación
-histórica de la aplicación original. Sus rutas y diagramas no representan
-necesariamente la arquitectura actual; para probar pedidos, utilizar la
-colección indicada arriba.
+The root `docs/` folder and the legacy UML diagrams preserve historical
+documentation of the original application. Their routes and diagrams do not
+necessarily represent the current architecture; to test orders, use the
+collection mentioned above.
 
-## RabbitMQ y evento order.created
+## RabbitMQ and the order.created event
 
-Compose incluye RabbitMQ con almacenamiento persistente y panel en
-http://localhost:15672 (usuario y contraseña de desarrollo: `manufacturing`).
-El puerto AMQP es `5672`. Pedidos, pagos, máquinas y entregas usan `aio-pika`.
+Compose includes RabbitMQ with persistent storage and a management panel at
+http://localhost:15672 (development user and password: `manufacturing`).
+The AMQP port is `5672`. Orders, payments, machines and deliveries use
+`aio-pika`.
 
 ```text
 order-service -> manufacturing.events (topic)
@@ -329,68 +366,70 @@ machineservice -> manufacturing.events (topic)
                           -> order.events -> order-service
 ```
 
-Hay un exchange de aplicación durable y cuatro colas durables: `payment.events`
-para pagos, `order.payment.events` para resultados de pago y `order.events`
-para avisos de entrega y piezas a pedidos, y `machine.events` para solicitudes
-de fabricación. Un único consumidor de `order.events` distingue ambos tipos
-por su routing key. La creación de entregas y el cambio a `Ready` mantienen
-sus llamadas REST actuales. Clientes no consume estos eventos.
+There is one durable application exchange and four durable queues:
+`payment.events` for payments, `order.payment.events` for payment results and
+`order.events` for delivery and piece notices to orders, and `machine.events`
+for manufacturing requests. A single `order.events` consumer tells both types
+apart by their routing key. Delivery creation and the change to `Ready` keep
+their current REST calls. Clients does not consume these events.
 
-Tras aceptar el pago, pedidos publica `machine.pieces.requested` con
-`{order_id, piece_ids}`. Guarda `manufacturing_requested=true` solo después
-de la confirmación del broker; los fallos quedan pendientes para reintento.
-Máquinas publica `piece.status.update` con `{piece_id, status}`, primero
-`Manufacturing` y después `Manufactured`, reintentando hasta recibir confirmación.
-Pedidos guarda cada cambio antes de confirmar el mensaje. Los duplicados no
-hacen retroceder una pieza terminada. Máquinas evita encolar de nuevo piezas
-ya completadas en el proceso actual, aunque la recuperación REST todavía las
-devuelva mientras pedidos consume sus eventos. Tras reiniciar, recupera desde
-pedidos las piezas pagadas que siguen pendientes.
+After the payment is accepted, orders publishes `machine.pieces.requested` with
+`{order_id, piece_ids}`. It sets `manufacturing_requested=true` only after the
+broker's confirmation; failures stay pending for retry.
+Machines publishes `piece.status.update` with `{piece_id, status}`, first
+`Manufacturing` and then `Manufactured`, retrying until it receives
+confirmation. Orders saves each change before acknowledging the message.
+Duplicates do not roll back a finished piece. Machines avoids queuing again
+pieces already completed in the current process, even if the REST recovery
+still returns them while orders consumes its events. After a restart, it
+recovers from orders the paid pieces that are still pending.
 
-Entregas publica `delivery.status.update` únicamente al llegar a `Delivered`,
-con `{delivery_id, order_id, status}`. Pedidos consume `order.events`, comprueba
-que la entrega pertenece al pedido y aplica las mismas validaciones de pago y
-fabricación que la actualización REST. Confirma el mensaje después de guardar
-el estado `Delivered`; los fallos de procesamiento se reencolan y los mensajes
-inválidos se rechazan. Recibir el mismo aviso otra vez no cambia el resultado.
-`Ready` y `Sent` no publican eventos.
+Deliveries publishes `delivery.status.update` only when it reaches
+`Delivered`, with `{delivery_id, order_id, status}`. Orders consumes
+`order.events`, checks that the delivery belongs to the order and applies the
+same payment and manufacturing validations as the REST update. It acknowledges
+the message after saving the `Delivered` status; processing failures are
+requeued and invalid messages are rejected. Receiving the same notice again
+does not change the result. `Ready` and `Sent` do not publish events.
 
-El mensaje contiene `{order_id, client_id, amount}`. El propio pedido guarda
-`order_created_published`, que solo se activa tras la confirmación del broker.
-Así se reintenta la publicación si RabbitMQ falla, sin una tabla adicional.
+The message contains `{order_id, client_id, amount}`. The order itself stores
+`order_created_published`, which is only set after the broker's confirmation.
+This way publishing is retried if RabbitMQ fails, without an extra table.
 
-El contenedor se configura en `compose.yml`. Los módulos `messaging.py` de
-pedidos y pagos contienen las llamadas a RabbitMQ para publicar y consumir;
-Compose por sí solo no ejecuta esa lógica de Python.
+The container is configured in `compose.yml`. The `messaging.py` modules of
+orders and payments contain the RabbitMQ calls to publish and consume;
+Compose alone does not run that Python logic.
 
-Pagos consume `payment.events`, realiza el cobro y publica `payment.approved`
-o `payment.rejected`, con `{order_id, client_id, amount, accepted, reason}`.
-Confirma `order.created` después de que el broker confirme la publicación del
-resultado; si falla, lo reencola con una espera de cinco segundos. Pedidos consume
-`order.payment.events` y confirma el resultado tras procesarlo. Los cobros y resultados
-rechazados se conservan por pedido para que una redelivery no cambie el resultado
-ni cobre dos veces. Los mensajes con formato o datos contradictorios se rechazan.
-El resultado de pago ya no se comunica por REST. Pedidos conserva el endpoint
-anterior por compatibilidad, con las mismas validaciones que el consumidor.
+Payments consumes `payment.events`, performs the charge and publishes
+`payment.approved` or `payment.rejected`, with
+`{order_id, client_id, amount, accepted, reason}`. It acknowledges
+`order.created` after the broker confirms the publication of the result; if
+that fails, it requeues the message with a five-second delay. Orders consumes
+`order.payment.events` and acknowledges the result after processing it.
+Charges and rejected results are stored per order so that a redelivery neither
+changes the result nor charges twice. Messages with a contradictory format or
+data are rejected. The payment result is no longer communicated over REST.
+Orders keeps the previous endpoint for compatibility, with the same validations
+as the consumer.
 
-Para arrancar el proyecto actualizado:
+To start the updated project:
 
 ```bash
 docker compose up -d --build
 docker compose logs -f order-service paymentservice rabbitmq
 ```
 
-Crear un pedido devuelve **202** con `PendingPayment`. Consultar después
-`GET /api/orders/{id}` para conocer el resultado; saldo insuficiente deja el pedido
-en `Rejected`, con el motivo en `integration_error`. La validación de cliente
-continúa siendo síncrona y devuelve 404 si no existe.
+Creating an order returns **202** with `PendingPayment`. Then query
+`GET /api/orders/{id}` to learn the outcome; insufficient balance leaves the
+order as `Rejected`, with the reason in `integration_error`. Client validation
+remains synchronous and returns 404 if the client does not exist.
 
-Para desarrollo fuera de Docker, usar las variables `RABBITMQ_URL` y
-`RABBITMQ_EXCHANGE` del archivo de ejemplo. El Compose independiente de pedidos
-usa el RabbitMQ del host y requiere pagos y el resto de servicios en ejecución.
+For development outside Docker, use the `RABBITMQ_URL` and `RABBITMQ_EXCHANGE`
+variables from the example file. The standalone orders Compose uses the host's
+RabbitMQ and requires payments and the rest of the services to be running.
 
-Pruebas de persistencia, callbacks y cobros duplicados (con las dependencias
-de pedidos instaladas):
+Tests for persistence, callbacks and duplicate charges (with the orders
+dependencies installed):
 
 ```bash
 python tests/test_order_messaging.py
@@ -399,76 +438,115 @@ python tests/test_delivery_messaging.py
 python tests/test_machine_messaging.py
 ```
 
-Prueba completa con todos los servicios arrancados y `httpx` instalado:
+Full test with all services running and `httpx` installed:
 
 ```bash
 python tests/test_workflow_integration.py
 ```
 
-Crea un cliente de prueba, ingresa 100 y pide dos piezas; comprueba los estados
-de fabricación, la entrega por evento y el saldo final de 80. Conserva esos
-registros para poder revisarlos. `API_BASE_URL` permite cambiar el gateway
-(por defecto `http://localhost:8080`).
+It creates a test client, deposits 100 and orders two pieces; it checks the
+manufacturing statuses, the delivery by event and the final balance of 80. It
+keeps those records so you can review them. `API_BASE_URL` lets you change the
+gateway (default `http://localhost:8080`).
 
-## Flujo de pedidos
+## Order flow
 
-1. Crear el cliente con `POST /clients` en clientes.
-2. Ingresar saldo con `POST /payment/{client_id}/deposit` en pagos.
-3. Crear el pedido con `POST /order` en pedidos. El servicio valida al cliente,
-   calcula el importe y publica `order.created` para que pagos cobre. El precio fijo es **10 unidades de
-   saldo por pieza**; no se introduce en la petición.
-4. Si el pago se acepta, el pedido solicita la fabricación de sus piezas en
-   máquinas y crea la entrega con estado `Pending`.
-5. Máquinas notifica el inicio y fin de cada pieza mediante el evento
-   `piece.status.update`. Cuando todas terminan, pedidos marca la entrega
-   como `Ready` y el pedido como `ReadyForDelivery`.
-6. Actualizar la entrega con `PATCH /deliveries/delivery/{delivery_id}/status`,
-   indicando `Sent` o `Delivered` y, opcionalmente, `tracking_number`.
-   Al llegar a `Delivered`, entregas publica el aviso RabbitMQ que pedidos consume
-   para cerrar el flujo.
+1. Create the client with `POST /clients` in clients.
+2. Deposit balance with `POST /payment/{client_id}/deposit` in payments.
+3. Create the order with `POST /order` in orders. The service validates the
+   client, calculates the amount and publishes `order.created` so that payments
+   charges it. The fixed price is **10 balance units per piece**; it is not
+   sent in the request.
+4. If the payment is accepted, the order requests the manufacturing of its
+   pieces from machines and creates the delivery with `Pending` status.
+5. Machines reports the start and end of each piece through the
+   `piece.status.update` event. When all of them finish, orders marks the
+   delivery as `Ready` and the order as `ReadyForDelivery`.
+6. Update the delivery with `PATCH /deliveries/delivery/{delivery_id}/status`,
+   setting `Sent` or `Delivered` and, optionally, `tracking_number`.
+   When it reaches `Delivered`, deliveries publishes the RabbitMQ notice that
+   orders consumes to close the flow.
 
-Ejemplo de creación de pedido:
+Order status summary:
+
+```text
+PendingPayment -> (payment accepted) -> Pending -> ReadyForDelivery -> Delivered
+PendingPayment -> (insufficient balance) -> Rejected
+```
+
+Example order creation:
 
 ```json
 {
   "client_id": 1,
   "number_of_pieces": 3,
-  "description": "Pedido de prueba",
+  "description": "Test order",
   "address": "Calle Mayor 10"
 }
 ```
 
-El importe de ese pedido es 30. Un cliente inexistente devuelve 404; con saldo
-insuficiente el pedido pasa a `Rejected` y no se solicita fabricación ni entrega. Los pedidos
-rechazados por pagos quedan registrados como `Rejected`.
+The amount of that order is 30. A non-existent client returns 404; with
+insufficient balance the order becomes `Rejected` and neither manufacturing nor
+delivery is requested. Orders rejected by payments are recorded as `Rejected`.
 
-La creación devuelve 202 con `PendingPayment` mientras se procesa el evento.
-Si falla un servicio después de cobrar, queda `Pending` con `integration_error`.
-Los pasos pendientes se reintentan cada cinco segundos, también tras reiniciar.
-Se puede forzar un reintento con `POST /order/{order_id}/retry`.
-El identificador de pedido evita repetir cobros o crear entregas duplicadas.
-Los pedidos del flujo se conservan; eliminarlos devuelve 409 para evitar
-reutilizar identificadores de cobro sin un proceso de cancelación/reembolso.
+Creation returns 202 with `PendingPayment` while the event is processed.
+If a service fails after charging, the order stays `Pending` with
+`integration_error`. Pending steps are retried every five seconds, also after a
+restart. A retry can be forced with `POST /order/{order_id}/retry`.
+The order identifier prevents repeated charges or duplicate deliveries.
+Orders in the flow are kept; deleting them returns 409 to avoid reusing charge
+identifiers without a cancellation/refund process.
 
-Pedidos conserva las piezas en su base de datos. `GET /order/{order_id}/pieces`
-permite ver su estado. Máquinas recupera las piezas pagadas en cola o en
-fabricación desde pedidos y reintenta sus notificaciones si falla la conexión.
-Si entregas no puede publicar un aviso de entrega completada, conserva
-`order_notified=false` y reintenta la publicación. Ese campo pasa a `true` tras
-la confirmación del broker; la actualización del pedido ocurre al consumir
-el mensaje. No se vuelve a publicar para entregas ya notificadas anteriormente.
+Orders keeps the pieces in its database. `GET /order/{order_id}/pieces` shows
+their status. Machines recovers the paid pieces that are queued or being
+manufactured from orders and retries its notifications if the connection fails.
+If deliveries cannot publish a completed-delivery notice, it keeps
+`order_notified=false` and retries the publication. That field becomes `true`
+after the broker's confirmation; the order update happens when the message is
+consumed. It is not published again for deliveries that were already notified.
 
-Compose configura las URLs internas usando los nombres de los servicios.
-Para desarrollo local, las URLs por defecto utilizan los puertos de la tabla.
-El Compose independiente de pedidos accede a los otros servicios por los puertos
-del host (`host.docker.internal`). No se deben levantar simultáneamente dos
-instancias de pedidos sobre la misma base de datos.
+Compose configures the internal URLs using the service names.
+For local development, the default URLs use the ports in the table.
+The standalone orders Compose reaches the other services through the host ports
+(`host.docker.internal`). Two orders instances must not be started
+simultaneously on the same database.
 
-Al arrancar, pedidos y entregas añaden los campos del flujo a bases SQLite
-existentes sin borrar datos. Los pedidos antiguos sin cliente y dirección se
-conservan y no se envían automáticamente al flujo. Las entregas antiguas también
-se conservan, incluso si había duplicados por pedido; la regla que evita duplicar
-entregas y las notificaciones automáticas se aplican a las del nuevo flujo.
-El índice de cobro requiere que no existan cobros previos duplicados por pedido.
+On startup, orders and deliveries add the flow fields to existing SQLite
+databases without deleting data. Old orders without a client and address are
+kept and are not automatically sent into the flow. Old deliveries are also
+kept, even if there were duplicates per order; the rule that prevents
+duplicate deliveries and the automatic notifications apply to those of the new
+flow. The charge index requires that there are no previous duplicate charges
+per order.
 
-HAProxy publica los cinco servicios bajo las rutas de la sección API Gateway.
+HAProxy publishes the five services under the routes in the API Gateway
+section.
+
+## Troubleshooting
+
+- **A service keeps restarting:** check `docker compose logs <service>`. Most
+  services depend on RabbitMQ; wait for its healthcheck to pass or run
+  `docker compose ps`.
+- **The gateway returns 502/503 right after startup:** the backends may not be
+  ready yet. Wait a few seconds or run `docker compose restart haproxy`.
+- **401 on orders or payments:** the JWT is missing or expired, or clients was
+  restarted (this regenerates the signing key). Request a new token at
+  `/api/auth/token`.
+- **Chassis changes are not picked up:** rebuild the images without cache, as
+  described in [Shared chassis](#shared-chassis).
+- **Port already in use:** stop whatever is using it or change the left side of
+  the port mapping in `compose.yml`.
+- **Start from a clean state:** `docker compose down -v` also removes the
+  RabbitMQ volume. The SQLite databases live in each service's volume folder
+  (`*.db` files are git-ignored); delete them to reset the data.
+
+## Security notes
+
+This project is for development and teaching purposes only:
+
+- The default credentials (`admin` / `admin123`, `manufacturing`, HAProxy stats
+  `admin` / `admin`) must be changed before any real deployment.
+- The HTTPS certificate and key in `haproxy/` are for local use only; do not
+  reuse them elsewhere.
+- Registration does not verify email ownership, and RabbitMQ and the databases
+  are not hardened.
