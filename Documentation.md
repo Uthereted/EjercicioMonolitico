@@ -8,8 +8,6 @@ This document describes the resulting architecture, authentication, the chassis,
 
 ## Architecture overview
 
-&#91;embedded content: architecture · 5 microservices, gateway and event bus\]
-
 All external requests enter through HAProxy, which routes them by path prefix. Between services, communication runs on RabbitMQ events except for three REST calls that need an immediate reply: orders validates the client in the client service (`GET /clients/{id}`), orders creates the delivery in the delivery service (`POST /deliveries/delivery`), and orders and payments download the public key used to verify tokens (`GET /auth/public-key`). Each service has its own SQLite database on a Docker volume.
 
 ## Microservices
