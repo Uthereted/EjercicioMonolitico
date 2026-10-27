@@ -85,11 +85,30 @@ Business services do not depend on the logger or MongoDB: the durable audit queu
 retains their facts while the recorder is offline. It archives facts from the
 activation of its subscription; old already-consumed events are not backfilled.
 
-Inspect recent recorded events:
+Inspect recent recorded events (open MongoDB first to avoid PowerShell quote handling):
 
 ```powershell
 docker compose logs --tail=30 event-logger
-docker compose exec -T mongodb mongosh --quiet --eval 'db.getSiblingDB("manufacturing_audit").business_events.find({}, {event_type:1,producer:1,received_at:1}).sort({received_at:-1}).limit(20).toArray()'
+docker compose exec mongodb mongosh
+```
+
+Inside the MongoDB prompt, paste:
+
+```javascript
+db.getSiblingDB("manufacturing_audit").business_events.find().sort({received_at:-1}).limit(10).forEach(e => printjson(e))
+```
+
+To inspect one order, replace `15` with the order ID printed by the workflow test:
+
+```javascript
+db.getSiblingDB("manufacturing_audit").business_events.find({"data.order_id":15}).sort({received_at:1}).forEach(e => printjson(e))
+```
+
+An empty result means there are no recorded events for that ID. Events are stored
+in MongoDB, not in a new folder for each order. Return to PowerShell with:
+
+```javascript
+exit
 ```
 
 `python tests/test_event_audit_integration.py` completes a new order while the
@@ -460,16 +479,42 @@ python tests/test_refresh_tokens.py
 python tests/test_event_logger.py
 ```
 
-With Docker running, check authentication and the complete order flow:
+### Simulacro completo desde PowerShell
+
+Desde la raíz del proyecto, con Docker Desktop abierto, arranca los servicios.
+Si todavía no existe `.env`, créalo a partir del ejemplo:
 
 ```powershell
+if (!(Test-Path .env)) { Copy-Item dot_env_example .env }
 docker compose up -d --build
-python tests/test_auth_integration.py
-python tests/test_workflow_integration.py
+docker compose ps
+Invoke-RestMethod http://localhost:8080/health
 ```
 
-The live tests create retained test records. The workflow test verifies a paid
-order reaches `Delivered` with the expected final balance.
+Comprueba que los nueve contenedores están en ejecución. El endpoint `/health`
+comprueba el gateway; las siguientes pruebas verifican los servicios.
+Usa el entorno Python existente del proyecto, sin necesidad de activarlo:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install httpx
+.\.venv\Scripts\python.exe tests/test_auth_integration.py
+.\.venv\Scripts\python.exe tests/test_workflow_integration.py
+```
+
+La primera prueba comprueba autenticación, permisos, JWT y refresh tokens.
+La segunda crea un cliente, ingresa 100, pide dos piezas, espera la fabricación
+y completa la entrega. Debe terminar con un mensaje similar a:
+
+```text
+PASS order=15, delivery=..., pieces=Manufactured, status=Delivered, balance=80
+```
+
+El número del pedido varía. Las pruebas conservan los registros creados.
+Consulta sus eventos siguiendo [Dedicated business event audit](#dedicated-business-event-audit)
+y sustituyendo `15` por el número que muestre tu prueba.
+Si falla algún paso, ejecuta `docker compose logs --tail=100`.
+Para detener el programa conservando los datos, ejecuta `docker compose down`.
+
 For changes to recovery or auditing, also run these Docker checks:
 
 ```powershell
