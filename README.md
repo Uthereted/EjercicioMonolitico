@@ -21,11 +21,11 @@ Gateway at **http://localhost:8080** (see [API Gateway](#api-gateway)).
 
 ```text
 services/
-â”œâ”€â”€ client/       # Clients
-â”œâ”€â”€ delivery/     # Deliveries
-â”œâ”€â”€ machine/      # Machines and manufacturing queue
-â”œâ”€â”€ order/        # Orders and pieces
-â””â”€â”€ payment/      # Payments
+client/       # Clients
+delivery/     # Deliveries
+machine/      # Machines and manufacturing queue
+order/        # Orders and pieces
+payment/      # Payments
 haproxy/          # Gateway configuration
 compose.yml       # Run everything together
 dot_env_example   # Example environment variables
