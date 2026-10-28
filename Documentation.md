@@ -1,183 +1,231 @@
-# Manufacturing: Microservices, Chassis and RabbitMQ
+# Monolithic application 
 
 ## Summary
 
-The manufacturing monolith has been split into five FastAPI microservices (clients, orders, payments, machine and deliveries), each with its own database, behind an HAProxy API Gateway reachable over HTTP and HTTPS. Integrations between services that do not need an immediate response have moved to asynchronous events on RabbitMQ. Shared infrastructure (logging, health check, database sessions and event publishing) has been extracted into a chassis library, `microservice_chassis`, and sensitive operations are protected with JWT tokens issued by the client service.
+The manufacturing monolith has been split into five FastAPI microservices (clients, orders, payments, machine and deliveries), each with its own SQLite database, behind an HAProxy API Gateway reachable over HTTP and HTTPS. Internally the services no longer call each other: they follow an **event choreography**, where each service publishes facts about its own state on RabbitMQ and the others react independently. An event logger archives every business fact in MongoDB. Shared infrastructure (JWT verification, a transactional outbox and inbox, broker access and database setup) lives in the `microservice_chassis` library, and every API is protected with JWT tokens issued by the client service.
 
-This document describes the resulting architecture, authentication, the chassis, the event contracts, the reliability guarantees, and how to deploy and test the system.
+This document describes the resulting architecture, authentication, the chassis, the event contracts, the reliability guarantees, and how to deploy and test the system. It reflects [Uthereted/EjercicioMonolitico](https://github.com/Uthereted/EjercicioMonolitico) at commit `7feec07`.
 
 ## Architecture overview
 
-All external requests enter through HAProxy, which routes them by path prefix. Between services, communication runs on RabbitMQ events except for three REST calls that need an immediate reply: orders validates the client in the client service (`GET /clients/{id}`), orders creates the delivery in the delivery service (`POST /deliveries/delivery`), and orders and payments download the public key used to verify tokens (`GET /auth/public-key`). Each service has its own SQLite database on a Docker volume.
+The system runs as nine containers: the HAProxy gateway, RabbitMQ, the five microservices, the event logger and MongoDB. All external requests enter through HAProxy, which routes them by path prefix. Between services there is **no HTTP traffic at all**: no request/reply, no RPC and no peer service URLs. Each service depends only on the broker and on its own database, so a service that is down never blocks a request to another one; it simply catches up from its durable queue when it comes back.
+
+| Container | Role | Storage |
+| --- | --- | --- |
+| `haproxy` | API Gateway on `:8080` (HTTP) and `:8443` (HTTPS) | None |
+| `rabbitmq` | Topic exchange `manufacturing.events` and five durable queues | RabbitMQ volume |
+| `client_service` | Clients and authentication | `client.db` |
+| `order-service` | Orders and pieces | `orders.db` |
+| `paymentservice` | Accounts and charges | `payment.db` |
+| `machineservice` | Piece manufacturing | `machine.db` |
+| `delivery` | Deliveries | `delivery.db` |
+| `event-logger` | Business-event audit worker | Writes to MongoDB |
+| `mongodb` | Audit store | `manufacturing_audit` database |
 
 ## Microservices
 
-Each service lives in `services/<name>/`, has its own Dockerfile and is the sole owner of its data: no service reads another service's database.
+Each service lives in `services/<name>/`, has its own Dockerfile and is the sole owner of its data: no service reads another service's database. What a service needs from others it keeps as a local copy fed by events, such as the client catalogue and the public signing key.
 
-**Clients** (`client_service`, port 13005) handles client registration and lookup and is also the authentication service: it stores clients, users and roles in `client.db`, issues JWT tokens and publishes `client.cert.updated` whenever it generates a new signing key.
+**Clients** (`client_service`, port 13005) manages clients and is also the authentication service. It stores clients, users, roles and refresh sessions in `client.db`, issues JWT access and refresh tokens, and publishes `client.created`, a periodic `clients.catalogue.published` snapshot and `auth.signing-key.published`.
 
-**Orders** (`order-service`, port 13001) orchestrates the whole order flow and owns the state of every piece. It stores orders and pieces in `orders.db`. It publishes `order.created`, `machine.pieces.requested` and `order.delivery.ready`, and consumes payment, piece and delivery events.
+**Orders** (`order-service`, port 13001) owns orders and pieces in `orders.db`. It validates the client against its local catalogue, publishes `order.created`, `order.paid` and `order.manufactured`, and updates its view of the order from payment, piece and delivery facts. It no longer tells other services what to do.
 
-**Payments** (`paymentservice`, port 13006) manages accounts, deposits and order charges, with its data in `payment.db`. It consumes `order.created` and replies with `payment.approved` or `payment.rejected`.
+**Payments** (`paymentservice`, port 13006) manages accounts, deposits and charges in `payment.db`. It reacts to `order.created` by charging the client once and publishes `payment.approved` or `payment.rejected`.
 
-**Machine** (`machineservice`, port 13002) simulates manufacturing pieces one at a time. It has no database: it keeps its queue in memory. It consumes `machine.pieces.requested` and publishes `piece.status.update`.
+**Machine** (`machineservice`, port 13002) now has its own database, `machine.db`. It reacts to `order.paid` by persisting the work, manufactures the pieces one at a time and publishes `piece.manufacturing.started` and `piece.manufactured`. Queued and interrupted work survives restarts without asking any other service.
 
-**Deliveries** (`delivery`, port 13004) manages the delivery lifecycle and stores its data in `delivery.db`. It consumes `order.delivery.ready` to mark the delivery as `Ready` and publishes `delivery.status.update` when a delivery is completed.
+**Deliveries** (`delivery`, port 13004) manages deliveries in `delivery.db`. It creates a pending delivery when it sees `order.paid`, marks it `Ready` on `order.manufactured`, and publishes `delivery.created`, `delivery.ready` and `delivery.delivered`.
 
-Orders is the orchestrator: it decides when to charge, when to manufacture and when to deliver. Machine keeps no state of its own; if it restarts, it recovers pending pieces by querying orders (`GET /piece/by-status/{status}`).
-
-Calls that need an immediate reply remain REST: orders validates the client with `GET /clients/{id}` when creating the order and creates the delivery with `POST /deliveries/delivery`. Marking the delivery as `Ready` is no longer a REST call: it now goes through the `order.delivery.ready` event.
+**Event logger** (`event-logger`) is an independent worker with no HTTP API. It consumes the `audit.domain` queue and stores every business fact in MongoDB (`manufacturing_audit.business_events`). MongoDB has no published host port.
 
 ## Authentication
 
-The client service also acts as the authentication service. It issues JWT tokens signed with RS256 (a 2048-bit RSA private key) that expire after one hour. Orders and payments verify them with the public key, without calling the client service on every request.
+The client service also acts as the authentication service. It issues RS256 access tokens (a 2048-bit RSA key) that expire after one hour, together with refresh tokens. All five APIs verify access tokens locally with the chassis's `JWTVerifier`: signature, issuer `manufacturing-client`, audience `manufacturing-services` and the required claims `exp`, `iat` and `sub`. A missing or invalid token returns 401; if no public key is available yet, 503.
 
 | Client service endpoint | Gateway route | Purpose |
 | --- | --- | --- |
 | `POST /auth/register` | `/api/auth/register` | Registers a user. Public registration only allows the `user` role. |
-| `GET /auth/token` | `/api/auth/token` | Login with HTTP Basic (username and password). Returns `access_token`. |
-| `GET /auth/public-key` | `/api/auth/public-key` | PEM public key used to verify tokens. |
+| `POST /auth/token` (also `GET`) | `/api/auth/token` | Login with HTTP Basic. Returns `access_token`, `refresh_token`, `expires_in` (3600 s) and `refresh_expires_in` (7 days). |
+| `POST /auth/refresh` | `/api/auth/refresh` | Exchanges a refresh token for a new pair. Each refresh token works once. |
+| `POST /auth/logout` | `/api/auth/logout` | Revokes the refresh session. |
+| `POST /auth/service-token` | `/api/auth/service-token` | Token for a service account, using per-service secrets. Kept for external compatibility; the internal choreography does not use it. |
+| `GET /auth/public-key` | `/api/auth/public-key` | PEM public key. |
 
-The token contains `sub`, `username`, `email`, `roles` and `client_id`, plus `iss=manufacturing-client` and `aud=manufacturing-services`. The `client_id` is found by looking up the client with the same email as the user, so the user and client tables are independent. Passwords are stored with bcrypt. On startup the service creates the `admin` and `user` roles and an `admin` / `admin123` user for testing.
+The access token contains `sub`, `username`, `email`, `roles`, `client_id` and a unique `jti`. The `client_id` is found by looking up the client with the same email as the user. Passwords are stored with bcrypt. On startup the service creates the `admin` and `user` roles and an `admin` / `admin123` user for testing.
 
-**Protected routes.** You must send `Authorization: Bearer <access_token>` to create and list orders (`POST` and `GET /order`) and to deposit, charge or check the balance in payments. A regular user can only act on their own `client_id`; the `admin` role can act on any. Other routes do not require a token: this integration does not protect every API.
+**Refresh sessions.** Refresh tokens are random opaque values stored only as SHA-256 hashes in the `refresh_tokens` table. Every refresh rotates the pair, and the session has an absolute lifetime of seven days from login that rotation does not extend. Reusing an already consumed refresh token revokes the whole session, which protects against stolen tokens. Logout revokes the session; access tokens already issued stay valid until they expire.
 
-**Key rotation.** The client service generates its signing key in memory at startup and publishes `client.cert.updated` on RabbitMQ. Orders and payments listen for that event on their own exclusive queue, separate from `order.events`, and download the public key again. They also re-download it when they receive a token with a signature they do not recognize. Because the key is not persisted, restarting the client service invalidates all previous tokens and users must log in again.
+**Authorization.** A Bearer token is required for: creating, reading and listing clients; creating and listing orders; depositing, charging and checking balances; every machine operation; and every delivery operation except its service check. A regular user can only create a client for the email in their own token, see their own client, and order and pay for their own `client_id` (403 otherwise). The `admin` role can act on any client.
 
-This authentication is intended for development: registration does not verify email ownership, and JWT verification is duplicated in `auth_verifier.py` in orders and payments instead of living in the chassis.
+**Key distribution.** The client service generates its signing key in memory at startup and publishes it periodically as the `auth.signing-key.published` fact. Every JWT consumer stores the key in its own database, so protected requests keep working even while the client service is offline. Consumers also reload the key when a token's signature does not match. Restarting the client service changes the key: existing access tokens must be renewed, but refresh sessions survive.
+
+This remains development-grade authentication: registration does not verify email ownership, and the default credentials must be changed before any real deployment.
 
 ## Microservice chassis
 
-The chassis is a Python library that lives in its own repository, [Uthereted/chasis\_homework](https://github.com/Uthereted/chasis_homework), separate from the project. It is distributed as the `microservice_chassis` 0.4.0 package and imported in Python as `my_chassis`. It gathers the infrastructure that was repeated across services so that each service only contains its business logic. There is no mandatory base class: each service imports only what it needs.
+The chassis is the `microservice_chassis` 0.5.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
 
-| Module and function | What it does | Used by |
+| Module | What it provides | Used by |
 | --- | --- | --- |
-| `my_chassis.configure_logging(name)` | Configures console logging with a common format that includes `[service]`. | Orders and payments |
-| `my_chassis.create_health_router(name)` | Adds `GET /health`, which returns `{"status":"ok","service":"<name>"}`. | Orders and payments |
-| `my_chassis.database.create_db_dependency(session_factory)` | Creates the FastAPI `get_db` dependency, which opens one session per request and closes it even if the route fails. | Clients, deliveries, orders and payments |
-| `my_chassis.messaging.publish_json_event(...)` | Publishes a persistent JSON event with broker confirmation. Before publishing it declares the exchange and the destination queue and creates their bindings. | Orders, payments and deliveries |
-| `my_chassis.messaging.create_json_message(...)` | Builds the AMQP message: JSON, persistent, with `type` and `message_id`. | The `order.created` publisher in orders |
+| `my_chassis.auth.JWTVerifier` | RS256 verification of issuer, audience and required claims, with a cached public key refreshed after a signature mismatch | All five APIs |
+| `my_chassis.keys` | Validation of RSA public keys, a loader that reads the key from the service's database, and persistence of keys received as facts | JWT consumers |
+| `my_chassis.events.EventBus` | `event_outbox`, `event_inbox` and signing-key tables bound to the service's own database; atomic recording of facts; confirmed publishing with retries; one-time processing of received facts | The five services |
+| `my_chassis.messaging.TopicTransport` | Broker connection, the topic exchange and the subscription of a service's own queue to its topics | Services and event logger |
+| `my_chassis.database` | `create_database` (engine and session factory) and the per-request session dependency | All five service SQLite databases (MongoDB uses its own client) |
+| `configure_logging` | Common log format that includes the service name | Orders, payments and event logger |
+| `create_health_router` | `GET /health` endpoint | Orders and payments |
 
-`publish_json_event` does not retry or commit to the database: if it fails, it raises the exception and the service keeps its event pending to retry later (the outbox pattern described under Reliability). Models, business rules and JWT verification are not part of the chassis either; they stay in each service. Machine is the only service that does not use the chassis.
+Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
 
-Usage in a service:
-
-```python
-from my_chassis import configure_logging, create_health_router
-from my_chassis.database import create_db_dependency
-from my_chassis.messaging import publish_json_event
-
-configure_logging("order-service")
-get_db = create_db_dependency(SessionLocal)
-app.include_router(create_health_router("order-service"))
-
-await publish_json_event(RABBITMQ_URL, EXCHANGE, "machine.pieces.requested",
-                         "machine.events", payload, message_id)
-```
-
-**Installation.** Each service installs it from GitHub in its `requirements.txt`. Services that publish events request the `[messaging]` extra, which adds `aio-pika`:
-
-```text
-microservice_chassis[messaging] @ git+https://github.com/Uthereted/chasis_homework.git@main
-```
-
-The client service uses the variant without the extra. The Dockerfiles install `git` and `ca-certificates` before `pip install`. Cloning the project is enough: no local copy of the chassis is needed.
-
-**Versions.** The dependency points to the chassis `main` branch. Docker reuses the `pip` layer as long as `requirements.txt` does not change, so picking up chassis changes requires a rebuild without cache:
+**Distribution.** The repository ships a tested wheel, `vendor/microservice_chassis-0.5.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database]==0.5.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
 
 ```bash
-docker compose build --no-cache order-service paymentservice delivery client_service
-docker compose up -d order-service paymentservice delivery client_service
+python tools/build_chassis.py --source ../chasis_homework
 ```
 
-For the final submission, pin the dependency to a chassis commit or tag so everyone installs exactly the same version.
+For local development, install the wheel from the repository root:
 
-**Health check scope.** `/health` only shows that the process answers HTTP; it does not check the database or RabbitMQ. It is available at `http://localhost:13001/health` and `http://localhost:13006/health`. The gateway's `/health` is independent.
+```bash
+python -m pip install "vendor/microservice_chassis-0.5.0-py3-none-any.whl[auth,events,database]"
+```
 
-Natural next steps would be to move more into the chassis: the JWT verification duplicated in orders and payments, and the consumer loop with reconnection, which is repeated in every consumer.
+**Health check scope.** `/health` only shows that the process answers HTTP; it does not check the database or RabbitMQ. It is available on orders (`:13001/health`) and payments (`:13006/health`).
 
 ## RabbitMQ: queues and event contracts
 
-All events go through a single durable **topic** exchange, `manufacturing.events`. Each consuming service has its own durable queue and binds it to the routing keys it cares about. Services connect with `aio-pika` using `RABBITMQ_URL=amqp://manufacturing:manufacturing@rabbitmq:5672/`.
+All internal communication goes through a single durable **topic** exchange, `manufacturing.events`. Publishers record facts about their own state; subscribers decide on their own what to do with them. There are no command queues, RPC operations or reply queues.
 
-| Routing key | Published by | Queue | Consumed by | JSON body |
-| --- | --- | --- | --- | --- |
-| `order.created` | Orders | `payment.events` | Payments | `{order_id, client_id, amount}` |
-| `payment.approved` | Payments | `order.payment.events` | Orders | `{order_id, client_id, amount, accepted: true, reason}` |
-| `payment.rejected` | Payments | `order.payment.events` | Orders | `{order_id, client_id, amount, accepted: false, reason}` |
-| `machine.pieces.requested` | Orders | `machine.events` | Machine | `{order_id, piece_ids: [int]}` |
-| `piece.status.update` | Machine | `order.events` | Orders | `{piece_id, status: "Manufacturing" \| "Manufactured"}` |
-| `order.delivery.ready` | Orders | `delivery.events` | Deliveries | `{order_id, delivery_id, status: "Ready"}` |
-| `delivery.status.update` | Deliveries | `order.events` | Orders | `{delivery_id, order_id, status: "Delivered"}` |
-| `client.cert.updated` | Clients | One exclusive queue per instance | Orders and payments | `{}` (just a notification) |
+![Messaging topology](docs/project_messaging.png)
 
-All messages are published as persistent (`delivery_mode=PERSISTENT`), with `content_type=application/json`, `type` equal to the routing key, and a deterministic `message_id` (for example `piece.status.update:42:Manufactured`) that makes duplicates detectable.
+RabbitMQ imports its topology at boot from `infrastructure/rabbitmq/domain-definitions.json` (configured in `infrastructure/rabbitmq/20-domain.conf`), before any service publishes. Publishers only declare the exchange and never create other services' queues; each subscriber declares its own queue and binds its `messaging.TOPICS`. Adding a new consumer therefore does not require changing or rebuilding any publisher.
 
-There are five durable queues: `payment.events`, `order.payment.events`, `machine.events`, `order.events` and `delivery.events`. `order.events` carries two event types and has a single consumer in orders (`consume_order_events`), which tells them apart by routing key. `client.cert.updated` is the exception: it is not published as persistent, and each orders and payments instance receives it on a temporary exclusive queue that is deleted on disconnect, because a stale key notification is useless.
+| Queue | Consumer | Bound routing keys |
+| --- | --- | --- |
+| `order.domain` | Orders | `client.created`, `clients.catalogue.published`, `payment.approved`, `payment.rejected`, `piece.manufacturing.started`, `piece.manufactured`, `delivery.created`, `delivery.ready`, `delivery.delivered`, `auth.signing-key.published` |
+| `payment.domain` | Payments | `client.created`, `clients.catalogue.published`, `order.created`, `auth.signing-key.published` |
+| `machine.domain` | Machine | `order.paid`, `auth.signing-key.published` |
+| `delivery.domain` | Deliveries | `order.paid`, `order.manufactured`, `auth.signing-key.published` |
+| `audit.domain` | Event logger | `client.#`, `order.#`, `payment.#`, `piece.#`, `delivery.#` |
 
-Every message is validated with a Pydantic model before processing. The consumer then decides:
+The system uses 13 fact types:
 
-- **ack** if it was processed successfully.
-- **reject without requeue** if the message is invalid or contradictory: a validation error, an unknown routing key, or data that does not match (for example, a delivery that does not belong to the order). Retrying would never fix it.
-- **nack with requeue**, after waiting 5 s, for transient errors: the database or another service being down, or a `piece.status.update` that arrives too early (a `Manufactured` for a piece that orders has not yet seen as `Manufacturing`).
+| Fact | Publisher | Data | Reaction |
+| --- | --- | --- | --- |
+| `client.created` | Clients | `{client_id}` | Orders and payments add it to their local client catalogue |
+| `clients.catalogue.published` | Clients | `{client_ids}` | Periodic snapshot that bootstraps new or recovered catalogues |
+| `auth.signing-key.published` | Clients | `{public_key}` | Every JWT consumer stores the public key |
+| `order.created` | Orders | `{order_id, client_id, amount}` | Payments decides and records the charge |
+| `payment.approved` / `payment.rejected` | Payments | `{order_id, client_id, amount, accepted, reason}` | Orders records the outcome |
+| `order.paid` | Orders | `{order_id, client_id, amount, address, piece_ids, manufactured_piece_ids}` | Machine persists the work; deliveries creates a pending delivery |
+| `piece.manufacturing.started` / `piece.manufactured` | Machine | `{piece_id, order_id}` | Orders updates the piece |
+| `order.manufactured` | Orders | same as `order.paid` | Deliveries makes the delivery `Ready` |
+| `delivery.created` / `delivery.ready` / `delivery.delivered` | Deliveries | `{order_id, client_id, delivery_id}` | Orders updates its view of the delivery |
+
+Every message carries the same envelope, `{event_id, event_type, producer, data}`, is persistent, and uses the `event_id` as `message_id` (for example `order.paid:12`). Each consumer validates `data` against strict Pydantic contracts defined in its own `contracts.py`; it never imports another service's code.
+
+The consumer then decides:
+
+- **ack** once the fact and its effects are committed, or if its `event_id` is already in the inbox (a duplicate).
+- **reject without requeue** if the envelope or data is invalid. Retrying would never fix it.
+- **nack with requeue**, after one second, for transient errors; the transaction is rolled back first.
 
 ## Order flow
 
-&#91;embedded content: order flow · 8 steps, 6 events\]
+| Step | Trigger | Fact or request | Order status |
+| --- | --- | --- | --- |
+| 1 | User | `POST /order` with JWT | `PendingPayment` |
+| 2 | Orders | `order.created` | `PendingPayment` |
+| 3 | Payments | `payment.approved` (or `payment.rejected` → `Rejected`) | `Accepted` |
+| 4 | Orders | `order.paid`, consumed by machine and deliveries | `Manufacturing` |
+| 5 | Deliveries | `delivery.created` | `Manufacturing` |
+| 6 | Machine | `piece.manufacturing.started` and `piece.manufactured`, per piece | `Manufacturing` |
+| 7 | Orders | `order.manufactured` | `Manufacturing` |
+| 8 | Deliveries | `delivery.ready` | `ReadyForDelivery` |
+| 9 | User | `PATCH /deliveries/delivery/{id}/status` (`Sent`, then `Delivered`) | `ReadyForDelivery` |
+| 10 | Deliveries | `delivery.delivered` | `Delivered` |
 
-The client creates the order with `POST /order`, sending their JWT token. The order starts in `PendingPayment` and orders publishes `order.created`. Payments charges the client and replies with `payment.approved` (the order moves to `Accepted`) or `payment.rejected` (it moves to `Rejected` and nothing is manufactured). Once payment is accepted, orders publishes `machine.pieces.requested` with the piece ids and creates the delivery over REST.
+The user creates the order with `POST /order` and their JWT. Orders checks the client in its local catalogue (404 if it does not know it yet; the catalogue fills asynchronously, so a brand-new client may need a short retry), calculates the amount at 10 per piece, saves the order as `PendingPayment` and records `order.created` in the same transaction. Payments charges the client once and publishes `payment.approved` (the order moves to `Accepted`) or `payment.rejected` (it moves to `Rejected` and nothing else happens).
 
-The machine manufactures the pieces one at a time and publishes two `piece.status.update` events per piece: `Manufacturing` when it starts and `Manufactured` when it finishes. When all pieces are done, orders publishes `order.delivery.ready`, deliveries marks the delivery as `Ready`, and the order moves to `ReadyForDelivery`. The delivery then advances manually with `PATCH /api/deliveries/{id}/status` (`Sent`, `Delivered`). When it reaches `Delivered`, deliveries publishes `delivery.status.update` and the order ends in `Delivered`.
+On approval, orders publishes `order.paid` with the address and piece ids, and the order moves to `Manufacturing`. Two services react to that same fact independently: machine persists the work, and deliveries creates a pending delivery and publishes `delivery.created`. The machine builds the pieces one at a time and publishes `piece.manufacturing.started` and `piece.manufactured` for each one.
+
+When every piece is built, orders publishes `order.manufactured`; deliveries marks the delivery `Ready` and publishes `delivery.ready`, and the order becomes `ReadyForDelivery`. The delivery then advances by hand with `PATCH /deliveries/delivery/{id}/status` (`Sent`, then `Delivered`). On `Delivered`, deliveries publishes `delivery.delivered` and the order ends in `Delivered`. Facts may arrive out of order (for example `order.manufactured` before `order.paid` in deliveries), and the services still end in a single, consistent state.
 
 ## Reliability
 
-The goal is that no order is lost or charged twice even if RabbitMQ or any service goes down. Five mechanisms achieve this.
+The goal is that no fact is lost, no order is charged twice and no service needs another one to be up. Five mechanisms, most of them in the chassis's `EventBus`, achieve this.
 
-| Mechanism | Where | How it works |
-| --- | --- | --- |
-| Outbox with database flags | Orders (`order_created_published`, `manufacturing_requested`, `delivery_ready_published`), deliveries (`order_notified`) | The event is published first and the flag is set only afterwards. If RabbitMQ does not respond, the flag stays `False` and a background loop retries (`publish_pending_events`, `retry_pending_orders`, `retry_notifications`). |
-| Broker confirmation | All publishers | Channels with `publisher_confirms=True` and `mandatory=True` (in the chassis's `publish_json_event`): a publication only counts as done when RabbitMQ confirms it has stored it in a queue. |
-| Durable queues declared by the publisher | All | The publisher also declares and binds the destination queue, so the message is kept even if the consumer has never started. |
-| Idempotency | Payments, orders, machine, deliveries | Payments stores the result per order in `OrderPaymentResult` and never charges twice. Orders ignores states it already has: a `Manufactured` piece never goes back. Machine discards repeated or already finished pieces (`pending_ids`, `completed_ids`). Deliveries never moves a delivery's status backwards. |
-| Reconnection and retry | All consumers | If the connection drops, the loop waits 5 s and reconnects. Machine retries each piece event until it is confirmed, showing the `PendingNotification` status meanwhile. |
+| Mechanism | How it works |
+| --- | --- |
+| Transactional outbox | A service records the fact in its own `event_outbox` table in the same transaction as the state change. A background loop publishes pending rows and marks them published only after RabbitMQ confirms; outages and restarts are retried automatically. |
+| Inbox deduplication | Every received `event_id` is stored in `event_inbox` in the same transaction as its effects. A redelivered or duplicated fact is acknowledged and ignored, so effects happen only once. |
+| Durable, predefined queues | The five queues exist from RabbitMQ's boot, and messages are persistent. A service that is down catches up from its queue when it restarts. |
+| Local copies instead of calls | Orders and payments keep a local client catalogue, and every JWT consumer keeps the public key, so protected requests work while the client service is offline. |
+| Idempotent business rules | Payments stores one result per order and never charges twice, including after a later deposit on a rejected order. Deliveries creates one delivery per order and never moves it backwards, even if `order.manufactured` arrives before `order.paid`. Machine keeps its queued and interrupted work in `machine.db`. |
 
-One known limitation: machine acknowledges (`ack`) the request as soon as it puts the pieces in its in-memory queue, not when it finishes manufacturing them. If the container dies midway, those pieces are recovered over REST from orders on restart (`recovery_coroutine`). The alternative would be one message per piece with `prefetch_count=1` and an `ack` after publishing `Manufactured`, at the cost of no longer being able to list the queue in `GET /machine/status`.
+The outbox gives at-least-once delivery: a crash between RabbitMQ's confirmation and marking the row as published can send a fact twice, which the receiving inbox then discards. APIs therefore show eventual progress: a `202` from `POST /order` means the order is accepted for processing, not that payment has finished. `POST /order/{id}/retry` re-records any facts an order still needs.
 
 ## Deployment and testing
 
-Everything starts from the repository root with `docker compose up -d --build`. RabbitMQ (`rabbitmq:4-management`) has a healthcheck, and the services that use it wait until it is healthy (`depends_on: condition: service_healthy`).
+From the repository root:
+
+```bash
+cp dot_env_example .env
+docker compose up -d --build
+curl http://localhost:8080/health
+```
+
+On Windows PowerShell, use `Copy-Item dot_env_example .env` instead of `cp`. The `.env` file is required: deliveries reads its database URL from it. RabbitMQ (`rabbitmq:4-management`) and MongoDB have healthchecks, and the services that use them wait until they are healthy.
 
 | Access | URL |
 | --- | --- |
-| API Gateway (HAProxy) over HTTP | `http://localhost:8080/api/...` |
+| API Gateway over HTTP | `http://localhost:8080/api/...` |
 | API Gateway over HTTPS (local development certificate) | `https://localhost:8443/api/...` |
 | HAProxy statistics | `http://localhost:8404` (admin / admin) |
 | RabbitMQ console | `http://localhost:15672` (manufacturing / manufacturing) |
 | Swagger for each service | `:13001/docs`, `:13002/docs`, `:13004/docs`, `:13005/client`, `:13006/payment` |
-| Orders and payments health | `http://localhost:13001/health`, `http://localhost:13006/health` |
 
-The gateway routes `/api/orders`, `/api/pieces`, `/api/auth`, `/api/clients`, `/api/payments`, `/api/machine` and `/api/deliveries` to the matching service, keeps the legacy `/api/order` and `/api/delivery` routes for the Bruno collection, and returns 404 for anything else. HTTPS terminates at HAProxy with `haproxy/gateway.pem`; inside the Docker network, traffic to the services remains HTTP.
+The gateway routes `/api/orders`, `/api/pieces`, `/api/auth`, `/api/clients`, `/api/payments`, `/api/machine` and `/api/deliveries` to the matching service, keeps the legacy `/api/order` and `/api/delivery` routes, and returns 404 for anything else. HTTPS terminates at HAProxy with `haproxy/gateway.pem`. The audit trail can be inspected with:
 
-**Unit tests** (from the repository root, without Docker, with the services' dependencies installed):
+```bash
+docker compose exec -T mongodb mongosh --quiet --eval 'db.getSiblingDB("manufacturing_audit").business_events.find({}, {event_type:1,producer:1,received_at:1}).sort({received_at:-1}).limit(20).toArray()'
+```
+
+**Unit tests.** Run each in its own process, with the chassis wheel and the service's requirements installed:
 
 ```bash
 python tests/test_domain_events.py --service order
 python tests/test_domain_events.py --service payment
 python tests/test_domain_events.py --service delivery
 python tests/test_domain_events.py --service machine
+python tests/test_refresh_tokens.py
+python tests/test_event_logger.py
 ```
 
-Run `python tests/test_refresh_tokens.py` for token security and
-`python tests/test_event_logger.py` for audit persistence and acknowledgements.
-Shared JWT implementation tests live in the chassis repository.
-
-**Integration tests** (with everything running in Docker; they use the gateway at `API_BASE_URL`, `http://localhost:8080` by default):
+**Integration tests** (with the stack running; they use the gateway at `API_BASE_URL`, `http://localhost:8080` by default). The recovery and audit tests stop containers on purpose and restore them in `finally` blocks:
 
 ```bash
 python tests/test_auth_integration.py
 python tests/test_workflow_integration.py
+python tests/test_event_recovery_integration.py
+python tests/test_event_audit_integration.py
 ```
 
-The second one logs in as `admin` (configurable with `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD`), creates a client, deposits 100, orders two pieces, completes the delivery and checks that the final balance is 80.
+**Manual testing.** With Bruno, select the `Gateway` environment, set `authUsername` and `authPassword`, and run `Auth / Request token`; it stores `accessToken` and `refreshToken` for the other requests. With any other client, get a token with `POST /api/auth/token` (HTTP Basic, `admin` / `admin123`) and send it as `Authorization: Bearer <token>`.
 
-**Manual testing.** To test with Postman or Bruno: get a token with `GET /api/auth/token` (HTTP Basic, `admin` / `admin123`) and send it as `Authorization: Bearer <token>` when depositing and when creating the order. The remaining steps (checking the order and its pieces, completing the delivery) do not need a token.
+# Task contributions
+
+| Task | Xian | Unai | Unax | Alejandro | Javi |
+| --- | --- | --- | --- | --- | --- |
+| Monolith split into microservices | 2 | 2 | 2 | 2 | 2 |
+| API Gateway (HAProxy, HTTPS) | 1 | 5 | 1 | 2 | 1 |
+| Client service and JWT authentication | 1 | 4 | 3 | 1 | 1 |
+| Refresh tokens and service tokens | 2 | 1 | 2 | 5 | 0 |
+| JWT in machine and delivery | 0 | 3 | 5 | 1 | 1 |
+| RabbitMQ: payment flow | 1 | 4 | 1 | 3 | 1 |
+| RabbitMQ: machine integration | 1 | 2 | 4 | 1 | 2 |
+| Event choreography (outbox / inbox) | 1 | 2 | 1 | 3 | 3 |
+| Microservice chassis | 6 | 1 | 1 | 1 | 1 |
+| Event logger and MongoDB audit | 0 | 1 | 6 | 2 | 1 |
+| Docker Compose and deployment fixes | 2 | 3 | 2 | 1 | 2 |
+| Tests (unit and integration) | 4 | 3 | 3 | 0 | 0 |
+| Documentation and presentation | 0 | 0 | 0 | 5 | 5 |
