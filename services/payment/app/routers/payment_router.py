@@ -84,10 +84,10 @@ async def deposit(
 @router.post(
     "/payment/{client_id}/charge",
     response_model=schemas.Account,
-    summary="Charge a client's account to pay for an order",
+    summary="Legacy direct charge (disabled; use the order saga)",
     responses={
         status.HTTP_409_CONFLICT: {
-            "model": schemas.Message, "description": "Insufficient funds"
+            "model": schemas.Message, "description": "Payment is managed by the order saga"
         }
     },
     tags=["Payment"]
@@ -98,19 +98,9 @@ async def charge(
     db: AsyncSession = Depends(get_db),
     token_payload: dict = Depends(verify_jwt)  # Inyección de seguridad JWT
 ):
-    """
-    Charge endpoint. Called by the Order service (step 3.1 in the flow), NOT by the UI.
-    Returns 409 if the client does not have enough balance.
-    """
-    logger.debug("POST '/payment/%i/charge' endpoint called.", client_id)
+    """Direct charges are disabled; the order saga reserves and confirms payment."""
     _check_client_ownership(client_id, token_payload)
-    await _ensure_client_exists(client_id)
-    try:
-        return await crud.charge(
-            db, client_id, charge_schema.amount, charge_schema.order_id
-        )
-    except (crud.InsufficientFundsError, crud.PaymentConflictError) as exc:
-        raise_and_log_error(logger, status.HTTP_409_CONFLICT, str(exc))
+    raise HTTPException(409, "Direct charges are disabled; payment is managed by the order saga")
 
 
 @router.get(

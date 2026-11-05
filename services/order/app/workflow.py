@@ -12,8 +12,10 @@ locks = defaultdict(asyncio.Lock)
 
 async def validate_client(client_id):
     async with database.SessionLocal() as db:
-        if await db.get(models.KnownClient, client_id) is None:
+        client = await db.get(models.KnownClient, client_id)
+        if client is None:
             raise HTTPException(404, "Client is not present in the local catalogue yet")
+        return client
 
 
 async def pieces_for_order(db, order_id):
@@ -22,6 +24,12 @@ async def pieces_for_order(db, order_id):
 
 
 async def stage_order_facts(db, order):
+    order_saga = await db.scalar(select(models.OrderSaga).where(models.OrderSaga.order_id == order.id))
+    if order_saga is not None and order_saga.state != "Approved":
+        # Retries and startup must not also launch the legacy payment choreography.
+        from .saga import stage_requests
+        await stage_requests(db, order, order_saga)
+        return
     if order.client_id is None or order.status in ("Rejected", "Delivered"):
         return
     if not order.payment_completed:

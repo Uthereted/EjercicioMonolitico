@@ -16,7 +16,7 @@ class OrderBase(BaseModel):
 class OrderPost(OrderBase):
     number_of_pieces: int = Field(gt=0, le=10000)
     client_id: int = Field(gt=0)
-    address: str = Field(min_length=1, max_length=500)
+    address: Optional[str] = Field(default=None, min_length=1, max_length=500)
 
 
 class Order(OrderBase):

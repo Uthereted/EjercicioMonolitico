@@ -36,6 +36,14 @@ class Order(BaseModel):
     delivery_ready_published = Column(Boolean, nullable=False, default=False)
 
 
+class OrderSaga(BaseModel):
+    """Persist the explicit saga independently of the order's business state."""
+    __tablename__ = "order_saga"
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, ForeignKey("manufacturing_order.id"), nullable=False, unique=True)
+    state = Column(String(64), nullable=False, default="PendingPaymentAndDelivery")
+
+
 class Piece(BaseModel):
     """Durable manufacturing state owned by the order service."""
     __tablename__ = "piece"
@@ -47,3 +55,5 @@ class Piece(BaseModel):
 class KnownClient(Base):
     __tablename__ = "known_client"
     id = Column(Integer, primary_key=True)
+    address = Column(String(500), nullable=True)
+    postal_code = Column(String(5), nullable=True)

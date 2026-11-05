@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from app.routers import clients_router
-from app.sql import database, models, crud
+from app.sql import database, models, crud, migrations
 from app import crypto, messaging, events
 
 
@@ -10,6 +10,7 @@ from app import crypto, messaging, events
 async def lifespan(app: FastAPI):
     async with database.engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.create_all)
+        await conn.run_sync(migrations.upgrade)
     async with database.SessionLocal() as db:
         await crud.seed_initial_data(db)
     crypto.generate_rsa_keys()

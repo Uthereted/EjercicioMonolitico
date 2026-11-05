@@ -1,4 +1,7 @@
-vars:pre-request {
-  @description('Order Service local URL')
-  baseURL: http://localhost:13001
+auth {
+  mode: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
 }

@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from my_chassis import configure_logging, create_health_router
-from app import messaging, workflow, events
+from app import messaging, workflow, events, saga
 from app.routers import main_router
 from app.sql import database, migrations, models
 from app.auth_verifier import fetch_public_key
@@ -18,7 +18,8 @@ async def lifespan(app):
     await workflow.bootstrap()
     await fetch_public_key()
     tasks = [asyncio.create_task(events.publish_pending_events()),
-             asyncio.create_task(events.consume_events("order.domain", messaging.handle_event, topics=messaging.TOPICS))]
+             asyncio.create_task(events.consume_events("order.domain", messaging.handle_event, topics=messaging.TOPICS)),
+             asyncio.create_task(events.consume_events("order.saga", saga.handle_event, topics=saga.TOPICS))]
     try:
         yield
     finally:

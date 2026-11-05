@@ -1,4 +1,4 @@
-"""Dedicated, idempotent MongoDB archive of business facts."""
+"""Dedicated, idempotent MongoDB archive of business facts and saga messages."""
 import asyncio
 import logging
 import os
@@ -12,10 +12,11 @@ from my_chassis.messaging import TopicTransport
 
 logger = logging.getLogger(__name__)
 TOPICS = ('client.#', 'order.#', 'payment.#', 'piece.#', 'delivery.#')
+SAGA_EXCHANGES = ('manufacturing.commands', 'manufacturing.saga.responses')
 
 
 def store_event(collection, envelope):
-    if not envelope['event_type'].startswith(('client.', 'order.', 'payment.', 'piece.', 'delivery.')):
+    if not envelope['event_type'].startswith(('client.', 'order.', 'payment.', 'piece.', 'delivery.', 'saga.')):
         raise ValueError('Not a business event')
     collection.update_one({'_id': envelope['event_id']}, {'$setOnInsert': {
         'event_type': envelope['event_type'],
@@ -40,6 +41,14 @@ async def process_event(message, collection):
         await message.ack()
 
 
+async def subscribe_audit(channel, transport):
+    queue = await transport.subscribe(channel, 'audit.domain', TOPICS)
+    for exchange_name in SAGA_EXCHANGES:
+        saga_transport = TopicTransport(transport.broker_url, exchange_name)
+        await saga_transport.subscribe(channel, 'audit.domain', ('saga.#',))
+    return queue
+
+
 async def run():
     configure_logging('event-logger')
     mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017'),
@@ -58,7 +67,7 @@ async def run():
                 async with connection:
                     channel = await connection.channel()
                     await channel.set_qos(prefetch_count=20)
-                    queue = await transport.subscribe(channel, 'audit.domain', TOPICS)
+                    queue = await subscribe_audit(channel, transport)
                     logger.info('Business event audit consumer ready')
                     async with queue.iterator() as messages:
                         async for message in messages:

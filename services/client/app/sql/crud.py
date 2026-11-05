@@ -54,10 +54,12 @@ async def create_user(db: AsyncSession, user_schema: schemas.UserCreate):
 
 
 async def create_client(db: AsyncSession, client: schemas.ClientCreate):
-    db_client = models.Client(name=client.name, email=client.email)
+    db_client = models.Client(**client.model_dump())
     db.add(db_client)
     await db.flush()
-    await record_event(db, "client.created", {"client_id": db_client.id}, f"client.created:{db_client.id}")
+    await record_event(db, "client.created", {
+        "client_id": db_client.id, "address": db_client.address, "postal_code": db_client.postal_code,
+    }, f"client.created:{db_client.id}")
     await db.commit()
     await db.refresh(db_client)
     return db_client

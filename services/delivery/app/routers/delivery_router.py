@@ -22,7 +22,7 @@ async def health_check():
 @router.post(
     "/delivery",
     response_model=schemas.Delivery,
-    summary="Create a delivery",
+    summary="Legacy direct delivery creation (disabled; use the order saga)",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_delivery(
@@ -30,8 +30,8 @@ async def create_delivery(
     db: AsyncSession = Depends(dependencies.get_db),
     token_payload: dict = Depends(verify_jwt)
 ):
-    """Create a delivery."""
-    return await crud.create_delivery_from_schema(db, delivery_schema)
+    """Delivery creation is owned by the order saga."""
+    raise HTTPException(409, "Direct delivery creation is disabled; use the order saga")
 
 
 @router.get(

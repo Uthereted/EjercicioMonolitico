@@ -1,4 +1,4 @@
-"""Live recovery test: temporarily stop delivery and restart a working machine.
+"""Live saga recovery: wait for offline delivery, then restart a working machine.
 
 Requires the local Compose stack. Test records remain; delivery is restored in finally.
 """
@@ -42,28 +42,32 @@ def run():
             os.getenv("TEST_AUTH_USERNAME", "admin"), os.getenv("TEST_AUTH_PASSWORD", "admin123")))
         client.headers["Authorization"] = f"Bearer {token['access_token']}"
         customer = request("POST", "/api/clients", json={
-            "name": "Event recovery", "email": f"recovery-{uuid.uuid4().hex}@example.org"})
+            "name": "Event recovery", "email": f"recovery-{uuid.uuid4().hex}@example.org",
+            "address": "Calle Mayor 10", "postal_code": "01001"})
         wait_for(lambda: request("POST", f"/api/payments/{customer['id']}/deposit", json={"amount": 100}))
         delivery_stopped = False
         try:
             compose("stop", "delivery")
             delivery_stopped = True
             order = wait_for(lambda: request("POST", "/api/orders", json={
-                "client_id": customer["id"], "number_of_pieces": 1, "address": "Madrid"}))
+                "client_id": customer["id"], "number_of_pieces": 1, "address": "Calle Mayor 10, 01001"}))
             order_id = order["id"]
             pieces = request("GET", f"/api/orders/{order_id}/pieces")
             piece_id = pieces[0]["id"]
-            wait_for(lambda: request("GET", "/api/machine/status")["working_piece"] == piece_id)
-            print(f"Order {order_id}: delivery offline, restarting machine during piece {piece_id}", flush=True)
-            compose("restart", "machineservice")
-            wait_for(lambda: all(p["status"] == "Manufactured" for p in request(
-                "GET", f"/api/orders/{order_id}/pieces")))
+            wait_for(lambda: request("GET", f"/api/payments/{customer['id']}/balance")["balance"] == 90)
             order = request("GET", f"/api/orders/{order_id}")
             assert order["delivery_id"] is None, order
+            assert not order["payment_completed"] and order["status"] == "PendingPayment", order
             assert order["integration_error"] is None, order
-            print("Manufacturing completed while delivery was offline", flush=True)
+            pieces = request("GET", f"/api/orders/{order_id}/pieces")
+            assert pieces[0]["status"] == "Queued", pieces
+            assert request("GET", "/api/machine/status")["working_piece"] != piece_id
+            print(f"Order {order_id}: saldo reservado, sin fabricar mientras Delivery esta caido", flush=True)
             compose("start", "delivery")
             delivery_stopped = False
+            wait_for(lambda: request("GET", "/api/machine/status")["working_piece"] == piece_id)
+            print(f"Delivery accepted; restarting machine during piece {piece_id}", flush=True)
+            compose("restart", "machineservice")
             wait_for(lambda: request("GET", f"/api/orders/{order_id}")["status"] == "ReadyForDelivery")
             order = request("GET", f"/api/orders/{order_id}")
             deliveries = request("GET", "/api/deliveries")

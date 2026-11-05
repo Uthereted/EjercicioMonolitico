@@ -32,7 +32,8 @@ def run():
         request("GET", "/api/deliveries", headers={"Authorization": "Bearer invalid"}, expected=401)
         request("GET", "/api/orders", headers={"Authorization": "Bearer invalid"}, expected=401)
         for method, path, body in (("GET", "/api/clients", None), ("GET", "/api/clients/1", None),
-                                   ("POST", "/api/clients", {"name": "Anonymous", "email": "anonymous@example.org"})):
+                                   ("POST", "/api/clients", {"name": "Anonymous", "email": "anonymous@example.org",
+                                                            "address": "Calle Mayor 10", "postal_code": "01001"})):
             request(method, path, json=body, expected=401)
             request(method, path, json=body, headers={"Authorization": "Bearer invalid"}, expected=401)
         request("POST", "/api/auth/token", expected=401)
@@ -45,11 +46,14 @@ def run():
         for _ in range(2):
             other = request("POST", "/api/clients", headers=admin_headers, expected=201, json={
                 "name": "Auth regression", "email": f"offset-{uuid.uuid4().hex}@example.org",
+                "address": "Calle Mayor 10", "postal_code": "01001",
             })
         identity = uuid.uuid4().hex
         email = f"auth-{identity}@example.org"
         customer = request("POST", "/api/clients", headers=admin_headers, expected=201,
-                           json={"name": "Usuario de prueba auth", "email": email})
+                           json={"name": "Usuario de prueba auth", "email": email,
+                                 "address": "Calle Mayor 10", "postal_code": "01001"})
+        assert customer["address"] == "Calle Mayor 10" and customer["postal_code"] == "01001", customer
         user = {"username": f"test-{identity}", "email": email, "password": uuid.uuid4().hex}
         request("POST", "/api/auth/register", json={**user, "roles": ["admin"]}, expected=400)
         request("POST", "/api/auth/register", json=user, expected=201)
@@ -63,7 +67,8 @@ def run():
         own_clients = request("GET", "/api/clients", headers=headers)
         assert [row['id'] for row in own_clients] == [customer['id']], own_clients
         request("POST", "/api/clients", headers=headers, expected=403,
-                json={"name": "Other", "email": f"other-{identity}@example.org"})
+                json={"name": "Other", "email": f"other-{identity}@example.org",
+                      "address": "Calle Mayor 10", "postal_code": "01001"})
         request("GET", "/api/machine/status", headers=headers)
         request("GET", "/api/deliveries", headers=headers)
         request("GET", f"/api/payments/{customer['id']}/balance", headers=headers)

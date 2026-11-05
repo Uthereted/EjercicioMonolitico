@@ -1,0 +1,38 @@
+meta {
+  name: Create client
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{gatewayURL}}/api/clients
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "name": "Saga test",
+    "email": "saga-{{$timestamp}}@example.org",
+    "address": "Calle Mayor 10",
+    "postal_code": "01001"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("clientId", res.getBody().id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isNumber
+  res.body.address: eq Calle Mayor 10
+}
+
+tests {
+  test("keeps the postal code as a five-digit string", function() {
+    expect(res.getBody().postal_code).to.eql("01001");
+  });
+}

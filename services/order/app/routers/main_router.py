@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.sql import crud, models, schemas
-from app import workflow
+from app import saga, workflow
 from app.auth_verifier import verify_jwt
 
 router = APIRouter()
@@ -18,15 +18,27 @@ async def require_order(db, order_id):
     return order
 
 
+async def reject_saga_callback(db, order_id):
+    if await db.scalar(select(models.OrderSaga.id).where(models.OrderSaga.order_id == order_id)) is not None:
+        raise HTTPException(409, "Saga orders are updated through messages, not manual callbacks")
+
+
 @router.post("/order", response_model=schemas.Order, status_code=202, tags=["Order"])
 async def create_order(order_schema: schemas.OrderPost,
                        db: AsyncSession = Depends(get_db),
                        token_payload: dict = Depends(verify_jwt)):
     if "admin" not in token_payload.get("roles", []) and token_payload.get("client_id") != order_schema.client_id:
         raise HTTPException(403, "Forbidden: el pedido debe pertenecer a tu cliente")
-    await workflow.validate_client(order_schema.client_id)
+    client = await workflow.validate_client(order_schema.client_id)
+    address = order_schema.address
+    if address is None:
+        if not client.address or not client.postal_code:
+            raise HTTPException(409, "Client address is not present in the local catalogue yet")
+        address = f"{client.address}, {client.postal_code}"
+        if len(address) > 500:
+            raise HTTPException(422, "Delivery address including postal code must not exceed 500 characters")
     order = models.Order(
-        **order_schema.model_dump(), unit_price=workflow.UNIT_PRICE,
+        **order_schema.model_dump(exclude={"address"}), address=address, unit_price=workflow.UNIT_PRICE,
         total_price=order_schema.number_of_pieces * workflow.UNIT_PRICE,
         status="PendingPayment",
     )
@@ -35,7 +47,7 @@ async def create_order(order_schema: schemas.OrderPost,
     db.add_all([models.Piece(order_id=order.id, status="Queued")
                 for _ in range(order.number_of_pieces)])
     await db.flush()
-    await workflow.stage_order_facts(db, order)
+    await saga.start(db, order)
     await db.commit()
     await db.refresh(order)
     return order
@@ -89,6 +101,7 @@ async def update_piece(piece_id: int, update: schemas.PieceStatusUpdate,
                        db: AsyncSession = Depends(get_db)):
     piece = await get_piece(piece_id, db)
     order = await require_order(db, piece.order_id)
+    await reject_saga_callback(db, order.id)
     if not order.payment_completed:
         raise HTTPException(409, "Order payment has not been accepted")
     if piece.status != "Manufactured":
@@ -110,6 +123,7 @@ async def update_order_status(order_id: int, update: schemas.OrderStatusUpdate,
                               db: AsyncSession = Depends(get_db)):
     async with workflow.locks[order_id]:
         order = await require_order(db, order_id)
+        await reject_saga_callback(db, order.id)
         pieces = await workflow.pieces_for_order(db, order_id)
         if not order.payment_completed or len(pieces) != order.number_of_pieces or any(
             piece.status != "Manufactured" for piece in pieces
@@ -139,6 +153,7 @@ async def payment_result(order_id: int, result: schemas.PaymentResult,
                          db: AsyncSession = Depends(get_db)):
     async with workflow.locks[order_id]:
         order = await require_order(db, order_id)
+        await reject_saga_callback(db, order.id)
         if order.client_id != result.client_id or order.total_price != result.amount:
             raise HTTPException(409, "Payment details do not match the order")
         if (order.payment_completed and not result.accepted) or (order.status == "Rejected" and result.accepted):

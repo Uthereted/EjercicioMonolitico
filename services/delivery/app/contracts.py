@@ -11,6 +11,13 @@ class OrderCreated(BaseModel):
     amount: PositiveID
 
 
+class CreateSagaDelivery(BaseModel):
+    saga_id: PositiveID
+    order_id: PositiveID
+    client_id: PositiveID
+    address: str = Field(min_length=1, max_length=500)
+
+
 class OrderPaid(OrderCreated):
     address: str = Field(min_length=1, max_length=500)
     piece_ids: list[PositiveID] = Field(min_length=1)

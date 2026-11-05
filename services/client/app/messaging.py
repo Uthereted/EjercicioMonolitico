@@ -12,9 +12,13 @@ async def publish_catalogue():
     # Snapshots bootstrap new local projections without request/reply.
     while True:
         async with database.SessionLocal() as db:
-            ids = list((await db.scalars(select(models.Client.id))).all())
+            clients = list((await db.scalars(select(models.Client))).all())
             epoch = uuid4().hex
-            await record_event(db, "clients.catalogue.published", {"client_ids": ids},
+            await record_event(db, "clients.catalogue.published", {
+                "client_ids": [client.id for client in clients],
+                "clients": [{"client_id": client.id, "address": client.address,
+                             "postal_code": client.postal_code} for client in clients],
+            },
                                f"clients.catalogue.published:{epoch}")
             pem = crypto.get_public_key_pem()
             fingerprint = hashlib.sha256(pem.encode()).hexdigest()

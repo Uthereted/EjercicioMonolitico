@@ -38,9 +38,12 @@ class ClientBase(BaseModel):
     email: EmailStr
 
 class ClientCreate(ClientBase):
-    pass
+    address: str = Field(min_length=1, max_length=500, pattern=r"\S")
+    postal_code: str = Field(pattern=r"^[0-9]{5}$")
 
 class ClientResponse(ClientBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
     creation_date: Optional[datetime] = None

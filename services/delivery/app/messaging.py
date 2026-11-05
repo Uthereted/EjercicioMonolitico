@@ -20,6 +20,8 @@ async def handle_event(db, event_type, payload):
         await db.flush()
     if delivery.client_id != fact.client_id or delivery.address != fact.address:
         raise ValueError("Conflicting order delivery")
+    if delivery.status == "Provisional":
+        delivery.status = "Pending"
     data = {"delivery_id": delivery.id, "order_id": delivery.order_id, "client_id": delivery.client_id}
     await record_event(db, "delivery.created", data, f"delivery.created:{delivery.id}")
     if event_type == "order.manufactured" and delivery.status == "Pending":

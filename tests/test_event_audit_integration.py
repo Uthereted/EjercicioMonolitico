@@ -17,25 +17,28 @@ def documents(order_id):
     return json.loads(output)
 
 
-def replay_creation(order_id):
+def replay_saga_messages(order_id):
     code = '''import asyncio, json, os, sys
 import aio_pika
 from pymongo import MongoClient
 from my_chassis.messaging import TopicTransport
-event = MongoClient(os.environ["MONGODB_URL"])["manufacturing_audit"]["business_events"].find_one(
-    {"_id": "order.created:" + sys.argv[1]})
-payload = {"event_id": event["_id"], "event_type": event["event_type"],
-           "producer": event["producer"], "data": event["data"]}
+collection = MongoClient(os.environ["MONGODB_URL"])["manufacturing_audit"]["business_events"]
 async def publish():
-    transport = TopicTransport(os.environ["RABBITMQ_URL"], os.environ["RABBITMQ_EXCHANGE"])
-    async with await transport.connect() as connection:
-        channel = await connection.channel(publisher_confirms=True)
-        exchange = await transport.provision(channel)
-        for _ in range(2):
-            await exchange.publish(aio_pika.Message(body=json.dumps(payload).encode(),
-                content_type="application/json", message_id=payload["event_id"],
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT),
-                routing_key=payload["event_type"], mandatory=True, timeout=5)
+    for event_type, exchange_name in (("saga.payment.reserve", "manufacturing.commands"),
+                                      ("saga.payment.confirmed", "manufacturing.saga.responses")):
+        event = collection.find_one({"event_type": event_type, "data.order_id": int(sys.argv[1])})
+        assert event is not None, event_type
+        payload = {"event_id": event["_id"], "event_type": event["event_type"],
+                   "producer": event["producer"], "data": event["data"]}
+        transport = TopicTransport(os.environ["RABBITMQ_URL"], exchange_name)
+        async with await transport.connect() as connection:
+            channel = await connection.channel(publisher_confirms=True, on_return_raises=True)
+            exchange = await transport.provision(channel)
+            for _ in range(2):
+                await exchange.publish(aio_pika.Message(body=json.dumps(payload).encode(),
+                    content_type="application/json", message_id=payload["event_id"],
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT),
+                    routing_key=payload["event_type"], mandatory=True, timeout=5)
 asyncio.run(publish())
 '''
     subprocess.run(['docker', 'compose', 'exec', '-T', 'event-logger', 'python', '-c', code,
@@ -56,10 +59,11 @@ def run():
         audit_stopped = True
         try:
             customer = request('POST', '/api/clients', json={
-                'name': 'Audit integration', 'email': f'audit-{uuid.uuid4().hex}@example.org'})
+                'name': 'Audit integration', 'email': f'audit-{uuid.uuid4().hex}@example.org',
+                'address': 'Calle Mayor 10', 'postal_code': '01001'})
             wait_for(lambda: request('POST', f"/api/payments/{customer['id']}/deposit", json={'amount': 100}))
             order = wait_for(lambda: request('POST', '/api/orders', json={
-                'client_id': customer['id'], 'number_of_pieces': 1, 'address': 'Madrid'}))
+                'client_id': customer['id'], 'number_of_pieces': 1, 'address': 'Calle Mayor 10, 01001'}))
             order_id = order['id']
             wait_for(lambda: request('GET', f'/api/orders/{order_id}')['status'] == 'ReadyForDelivery')
             order = request('GET', f'/api/orders/{order_id}')
@@ -69,14 +73,17 @@ def run():
             print(f'Order {order_id} completed while the audit consumer was offline', flush=True)
             compose('start', 'event-logger')
             audit_stopped = False
-            expected = {'order.created', 'payment.approved', 'order.paid', 'piece.manufacturing.started',
+            expected = {'order.paid', 'piece.manufacturing.started',
                         'piece.manufactured', 'order.manufactured', 'delivery.created',
-                        'delivery.ready', 'delivery.delivered'}
+                        'delivery.ready', 'delivery.delivered',
+                        'saga.payment.reserve', 'saga.payment.reserved',
+                        'saga.delivery.create', 'saga.delivery.accepted',
+                        'saga.payment.confirm', 'saga.payment.confirmed'}
             wait_for(lambda: expected.issubset({row['event_type'] for row in documents(order_id)}))
             before = documents(order_id)
             assert len(before) == len(expected), before
             assert all(row['producer'] != 'unknown' and 'received_at' in row for row in before)
-            replay_creation(order_id)
+            replay_saga_messages(order_id)
             time.sleep(2)
             after = documents(order_id)
             assert len(after) == len(before), after

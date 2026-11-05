@@ -32,9 +32,48 @@
       "auto_delete": false,
       "internal": false,
       "arguments": {}
+    },
+    {
+      "name": "manufacturing.commands",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "manufacturing.saga.responses",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
     }
   ],
   "queues": [
+    {
+      "name": "order.saga",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "payment.saga",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "delivery.saga",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
     {
       "name": "order.domain",
       "vhost": "/",
@@ -72,6 +111,118 @@
     }
   ],
   "bindings": [
+    {
+      "source": "manufacturing.commands",
+      "vhost": "/",
+      "destination": "audit.domain",
+      "destination_type": "queue",
+      "routing_key": "saga.#",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "audit.domain",
+      "destination_type": "queue",
+      "routing_key": "saga.#",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.commands",
+      "vhost": "/",
+      "destination": "payment.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.payment.release",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.commands",
+      "vhost": "/",
+      "destination": "delivery.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.delivery.cancel",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "order.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.payment.released",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "order.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.delivery.canceled",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.commands",
+      "vhost": "/",
+      "destination": "payment.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.payment.confirm",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "order.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.payment.confirmed",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "order.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.payment.reserved",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "order.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.payment.rejected",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "order.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.delivery.accepted",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.saga.responses",
+      "vhost": "/",
+      "destination": "order.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.delivery.rejected",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.commands",
+      "vhost": "/",
+      "destination": "payment.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.payment.reserve",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.commands",
+      "vhost": "/",
+      "destination": "delivery.saga",
+      "destination_type": "queue",
+      "routing_key": "saga.delivery.create",
+      "arguments": {}
+    },
     {
       "source": "manufacturing.events",
       "vhost": "/",

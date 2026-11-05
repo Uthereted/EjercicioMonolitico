@@ -22,3 +22,7 @@ class OrderCreated(BaseModel):
 class PaymentResult(OrderCreated):
     accepted: bool = Field(strict=True)
     reason: str = ""
+
+
+class ReservePayment(OrderCreated):
+    saga_id: PositiveID

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Index, text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Index, text
 from sqlalchemy.sql import func
 from .database import Base
 
@@ -7,6 +7,15 @@ class BaseModel(Base):
     __abstract__ = True
     creation_date = Column(DateTime(timezone=True), server_default=func.now())
     update_date = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class DeliverySagaResult(BaseModel):
+    __tablename__ = "delivery_saga_result"
+    saga_id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, nullable=False, unique=True)
+    delivery_id = Column(Integer, ForeignKey("delivery.id"), nullable=False)
+    accepted = Column(Boolean, nullable=False)
+    reason = Column(String(500), nullable=False)
 
 
 class Delivery(BaseModel):

@@ -1,10 +1,38 @@
 """Bind shared infrastructure to this service's own database and configuration."""
 import os
 from my_chassis.events import EventBus, RetryEvent
+from my_chassis.messaging import TopicTransport
 from .sql import database
 
-bus = EventBus(database.Base, database.SessionLocal, service_name="payment-service",
-               broker_url=os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/"),
+BROKER_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
+saga_outgoing = TopicTransport(BROKER_URL, "manufacturing.saga.responses")
+saga_incoming = TopicTransport(BROKER_URL, "manufacturing.commands")
+
+
+class ExchangeRouter:
+    """Keep the existing outbox, routing saga messages to their own exchange."""
+
+    def __init__(self, domain, saga):
+        self.domain = domain
+        self.saga = saga
+
+    async def publish(self, message, *, routing_key, **kwargs):
+        exchange = self.saga if routing_key.startswith("saga.") else self.domain
+        return await exchange.publish(message, routing_key=routing_key, **kwargs)
+
+
+class SagaEventBus(EventBus):
+    async def provision(self, channel):
+        return ExchangeRouter(await super().provision(channel), await saga_outgoing.provision(channel))
+
+    async def subscribe(self, channel, queue_name, topics):
+        if queue_name == "payment.saga":
+            return await saga_incoming.subscribe(channel, queue_name, topics)
+        return await super().subscribe(channel, queue_name, topics)
+
+
+bus = SagaEventBus(database.Base, database.SessionLocal, service_name="payment-service",
+               broker_url=BROKER_URL,
                exchange_name=os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events"))
 Outbox, Inbox, SigningKey = bus.Outbox, bus.Inbox, bus.SigningKey
 record_event = bus.record_event

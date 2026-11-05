@@ -3,6 +3,10 @@ from sqlalchemy import inspect, text
 
 
 def upgrade(connection):
+    client_columns = {column["name"] for column in inspect(connection).get_columns("known_client")}
+    for name, definition in {"address": "VARCHAR(500)", "postal_code": "VARCHAR(5)"}.items():
+        if name not in client_columns:
+            connection.execute(text(f"ALTER TABLE known_client ADD COLUMN {name} {definition}"))
     columns = {column["name"] for column in inspect(connection).get_columns("manufacturing_order")}
     additions = {
         "client_id": "INTEGER",

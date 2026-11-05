@@ -5,7 +5,7 @@ import os
 from contextlib import suppress
 from random import randint
 from sqlalchemy import select, delete
-from sqlalchemy.dialects.sqlite import insert
+from fastapi import HTTPException
 from .events import record_event
 from .sql import database
 from .sql.models import WorkPiece
@@ -72,12 +72,15 @@ class Machine:
             for piece_id in piece_ids:
                 if type(piece_id) is not int or piece_id <= 0:
                     raise ValueError("Invalid piece identifier")
-                await db.execute(insert(WorkPiece).values(id=piece_id, status="Queued")
-                                 .on_conflict_do_nothing(index_elements=["id"]))
-            await db.commit()
+                piece = await db.get(WorkPiece, piece_id)
+                if piece is None or piece.order_id is None:
+                    raise HTTPException(409, "Only pieces received from approved orders may enter manufacturing")
 
     async def remove_piece_from_queue(self, piece_id):
         async with database.SessionLocal() as db:
+            piece = await db.get(WorkPiece, piece_id)
+            if piece is not None and piece.order_id is not None:
+                raise HTTPException(409, "Order manufacturing is managed through messages")
             result = await db.execute(delete(WorkPiece).where(
                 WorkPiece.id == piece_id, WorkPiece.status == "Queued"))
             await db.commit()

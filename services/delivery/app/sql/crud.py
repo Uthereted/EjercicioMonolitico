@@ -36,6 +36,8 @@ async def get_delivery(db, delivery_id):
 async def delete_delivery(db, delivery_id):
     delivery = await get_delivery(db, delivery_id)
     if delivery is not None:
+        if delivery.workflow_managed:
+            raise HTTPException(409, "Workflow deliveries are retained; cancellation is managed by the saga")
         await db.delete(delivery)
         await db.commit()
     return delivery

@@ -30,6 +30,8 @@ class Client(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(256), nullable=False)
     email = Column(String(256), unique=True, nullable=False)
+    address = Column(String(500), nullable=True)
+    postal_code = Column(String(5), nullable=True)
     creation_date = Column(DateTime(timezone=True), server_default=func.now())
 
 

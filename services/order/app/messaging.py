@@ -1,4 +1,5 @@
 """React to payment, manufacturing and delivery facts using local state."""
+from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert
 from .contracts import ClientCreated, ClientCatalogue, PaymentResult, PieceFact, DeliveryFact
 from .events import RetryEvent
@@ -14,6 +15,15 @@ async def handle_event(db, event_type, payload):
                else ClientCatalogue.model_validate(payload).client_ids)
         for client_id in ids:
             await db.execute(insert(models.KnownClient).values(id=client_id).on_conflict_do_nothing())
+        clients = ([ClientCreated.model_validate(payload)] if event_type == "client.created"
+                   else ClientCatalogue.model_validate(payload).clients)
+        for client in clients:
+            statement = insert(models.KnownClient).values(
+                id=client.client_id, address=client.address, postal_code=client.postal_code)
+            await db.execute(statement.on_conflict_do_update(index_elements=["id"], set_={
+                "address": func.coalesce(statement.excluded.address, models.KnownClient.address),
+                "postal_code": func.coalesce(statement.excluded.postal_code, models.KnownClient.postal_code),
+            }))
         return
     if event_type in ("payment.approved", "payment.rejected"):
         fact = PaymentResult.model_validate(payload)
@@ -22,6 +32,8 @@ async def handle_event(db, event_type, payload):
         order = await db.get(models.Order, fact.order_id)
         if order is None:
             raise ValueError("Unknown order")
+        if await db.scalar(select(models.OrderSaga.id).where(models.OrderSaga.order_id == order.id)) is not None:
+            raise ValueError("Saga orders require saga payment responses")
         if order.client_id != fact.client_id or order.total_price != fact.amount:
             raise ValueError("Payment details do not match order")
         if order.payment_completed and not fact.accepted or order.status == "Rejected" and fact.accepted:

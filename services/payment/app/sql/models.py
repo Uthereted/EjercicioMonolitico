@@ -56,6 +56,16 @@ class OrderPaymentResult(BaseModel):
     reason = Column(String(500), nullable=False)
 
 
+class PaymentReservation(BaseModel):
+    __tablename__ = "payment_reservation"
+    saga_id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, nullable=False, unique=True)
+    client_id = Column(Integer, nullable=False)
+    amount = Column(Integer, nullable=False)
+    state = Column(String(32), nullable=False)
+    reason = Column(String(500), nullable=False)
+
+
 class KnownClient(Base):
     __tablename__ = "known_client"
     id = Column(Integer, primary_key=True)

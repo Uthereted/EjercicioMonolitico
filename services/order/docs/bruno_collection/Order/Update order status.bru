@@ -1,5 +1,5 @@
 meta {
-  name: Update order status
+  name: Legacy order status (blocked for saga orders)
   type: http
   seq: 5
 }
@@ -17,9 +17,8 @@ body:json {
 }
 
 assert {
-  res.status: eq 200
-  res.body.id: isNumber
-  res.body.status: eq Finished
+  res.status: eq 409
+  res.body.detail: eq Saga orders are updated through messages, not manual callbacks
 }
 
 settings {

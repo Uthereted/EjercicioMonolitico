@@ -74,7 +74,8 @@ and `tools/build_chassis.py` to regenerate the distribution after chassis change
 
 `event-logger` consumes `audit.domain` independently and stores facts in MongoDB:
 `manufacturing_audit.business_events`. It records `client.#`, `order.#`,
-`payment.#`, `piece.#` and `delivery.#` facts, with event identifier, producer,
+`payment.#`, `piece.#` and `delivery.#` facts, plus `saga.#` commands and responses
+from `manufacturing.commands` and `manufacturing.saga.responses`, with event identifier, producer,
 payload and UTC receipt time. Authentication/key publication and periodic client
 catalogue snapshots are not subscribed to this audit queue.
 
@@ -113,7 +114,8 @@ exit
 
 `python tests/test_event_audit_integration.py` completes a new order while the
 logger is stopped, restarts it, verifies the complete business-event trail and
-replays the creation fact to verify audit and payment deduplication. Test records
+replays the reservation command and payment confirmation response to verify
+audit and saga deduplication. Test records
 are retained, and the audit worker is restored in a `finally` block.
 
 ## Dependencies and Docker images
@@ -259,6 +261,16 @@ and `Client / List clients`. Select the
 `Refresh token` replaces both, and `Logout` clears them after revoking the session.
 The client folder inherits Bearer authentication from `accessToken`.
 
+For the saga flow in the root Bruno collection, select `Gateway`, request an
+admin token, run `Client / Create client` (saves `clientId`), then
+`Payment / Deposit balance` and `Order / Create an order` (saves `orderId`).
+Allow client events to reach the local catalogues before depositing or creating
+the order; retry a catalogue-related 404/409 shortly. Order creation returns 202
+and `PendingPayment`; query `Order / View an order` for asynchronous progress.
+To test compensation, use a new client without a deposit, or use postal code
+28001 with a deposit. The final order must be `Suspended`, its delivery `Canceled`,
+and its available balance restored to the amount before the order.
+
 Run `python tests/test_refresh_tokens.py` for refresh rotation, expiry, logout
 and replay protection. JWT verification is covered by the live authentication
 test and by the shared chassis tests in its own repository.
@@ -333,8 +345,15 @@ returned by each response:
 1. **Create client:** `POST /api/clients`.
 
    ```json
-   {"name":"Test client","email":"test@example.org"}
+   {"name":"Test client","email":"test@example.org","address":"Calle Mayor 10","postal_code":"01001"}
    ```
+
+   New clients require an address and a five-digit postal code. Orders receives
+   them through client events and periodic catalogue snapshots. Order creation
+   can omit `address` to use this local copy (409 until the address arrives).
+   Existing clients are retained with empty address fields; their orders can
+   still supply an explicit address including the postal code. Delivery coverage
+   accepts postal prefixes 01, 20 and 48.
 
 2. **Deposit balance:** `POST /api/payments/{client_id}/deposit`.
 
@@ -349,7 +368,7 @@ returned by each response:
      "client_id":1,
      "number_of_pieces":3,
      "description":"Manual test",
-     "address":"Calle Mayor 10"
+     "address":"Calle Mayor 10, 01001"
    }
    ```
 
@@ -405,9 +424,13 @@ The orders Bruno collection is in `services/order/docs/bruno_collection/`.
 The `Docker Compose` environment uses port `13001`.
 Before creating an order, register the client, deposit balance and set
 `clientId` in the Bruno environment. The five-piece example requires 50 units.
-The machine query uses `machineURL`. The example that updates an order to
-`Finished` requires all pieces to be manufactured; deleting an order that is
-part of the flow returns 409.
+The machine query uses `machineURL`. Manual order/payment/piece callbacks return
+409 for saga orders; their state is updated through messages. Direct payment
+charges and direct delivery creation also return 409. Workflow deliveries cannot
+be deleted or manually marked ready; manufacturing events make them ready, then
+the delivery API can mark them sent or delivered. Machine queue operations cannot
+create unapproved work or remove pieces belonging to an order. Deleting an order
+in the flow returns 409.
 The `API Gateway` Bruno environment lets you run the collection through port
 `8080`.
 
@@ -418,18 +441,26 @@ collection mentioned above.
 
 ## Domain events and recovery
 
-All internal communication uses the durable topic exchange
-`manufacturing.events`. External API calls still enter through HAProxy.
-Publishers record facts about their own state; subscribers independently decide
-what to do. There are no internal command queues, RPC operations or reply queues.
+Internal communication uses three durable topic exchanges. External API calls
+still enter through HAProxy.
+
+| Exchange | Messages and destination |
+| --- | --- |
+| `manufacturing.commands` | Order saga commands to `payment.saga` and `delivery.saga` |
+| `manufacturing.saga.responses` | Payment/delivery replies to the coordinator in `order.saga` |
+| `manufacturing.events` | Business facts, client catalogues and signing keys for domain subscribers |
+
+The existing outbox/inbox handles all three channels. Order publishes saga
+commands; payment and delivery publish saga responses. Business facts remain
+on the event exchange. No synchronous calls between services are needed.
 
 | Fact | Publisher | Subscribers and local reaction |
 | --- | --- | --- |
 | `client.created` / `clients.catalogue.published` | Client | Order/payment update their local client catalogues |
 | `auth.signing-key.published` | Client | JWT consumers persist the RSA public key |
-| `order.created` | Order | Payment decides and records the payment outcome |
-| `payment.approved` / `payment.rejected` | Payment | Order records the outcome |
-| `order.paid` | Order | Machine persists work; delivery independently creates a delivery |
+| `order.created` | Order (legacy flow) | Payment decides and records the payment outcome |
+| `payment.approved` / `payment.rejected` | Payment (legacy flow) | Order records the outcome |
+| `order.paid` | Order, after saga approval | Machine persists work; delivery activates its provisional entry |
 | `piece.manufacturing.started` / `piece.manufactured` | Machine | Order updates its local piece state |
 | `order.manufactured` | Order | Delivery independently makes the shipment ready |
 | `delivery.created` / `delivery.ready` / `delivery.delivered` | Delivery | Order updates its local view of delivery progress |
@@ -442,7 +473,8 @@ produce a duplicate; subscribers persist event identifiers and process effects
 only once. Invalid facts are rejected; transient failures roll back and retry.
 
 The durable queues are `order.domain`, `payment.domain`,
-`delivery.domain`, `machine.domain` and the independent `audit.domain`. RabbitMQ imports the topology from
+`delivery.domain`, `machine.domain`, `order.saga`, `payment.saga`, `delivery.saga`
+and the independent `audit.domain`. RabbitMQ imports the topology from
 `infrastructure/rabbitmq/domain-definitions.json` at boot, before services need
 to publish. Its configuration is `infrastructure/rabbitmq/20-domain.conf`.
 Publishers declare only the exchange and never create peer queues. Subscribers
