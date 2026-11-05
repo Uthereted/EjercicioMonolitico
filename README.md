@@ -21,16 +21,18 @@ Gateway at **http://localhost:8080** (see [API Gateway](#api-gateway)).
 
 ```text
 services/
-client/       # Clients
-delivery/     # Deliveries
-machine/      # Machines and manufacturing queue
-order/        # Orders and pieces
-payment/      # Payments
+  client/         # Clients and authentication
+  delivery/       # Deliveries
+  machine/        # Machines and manufacturing queue
+  order/          # Orders and pieces
+  payment/        # Payments
+  event_logger/   # MongoDB audit worker
 haproxy/          # Gateway configuration
 compose.yml       # Run everything together
 dot_env_example   # Example environment variables
 tests/            # Messaging, auth and end-to-end workflow tests
-docs/             # Historical documentation (original application)
+docs/             # Bruno collection, UML diagrams and reference documents
+Documentation.md  # English project documentation
 ```
 
 Each service folder contains its code in `app/`, its Dockerfile and its
@@ -42,8 +44,11 @@ Each API stores its SQLite database in `services/<service>/data/`, both for loca
 development and through Docker bind mounts. Database setup lives in
 `app/sql/database.py`; schema upgrades live in `app/sql/migrations.py` when needed.
 The application lifespan calls `database.initialize()` on startup.
-Orders also includes a standalone Compose file at `services/order/compose.yml`
-and documentation in `services/order/docs/`.
+Orders also includes a standalone Compose file at `services/order/compose.yml`.
+The shared API collection is in `docs/bruno_collection/`; reference PDF and
+PowerPoint files are in `docs/reference/`. Historical UML diagrams remain in
+`docs/uml/`. Duplicate service documentation and old build artifacts were moved
+to the ignored `.backups/repository-cleanup-2026-11-05/` folder.
 
 The previous database locations were archived under
 `.backups/service-layout-2026-11-05/` during reorganization. That local folder is
@@ -117,7 +122,7 @@ in MongoDB, not in a new folder for each order. Return to PowerShell with:
 exit
 ```
 
-`python tests/test_event_audit_integration.py` completes a new order while the
+`python tests/test_integration.py --all` completes a new order while the
 logger is stopped, restarts it, verifies the complete business-event trail and
 replays the reservation command and payment confirmation response to verify
 audit and saga deduplication. Test records
@@ -298,9 +303,8 @@ Persistent opaque refresh sessions survive this change.
 The gateway also listens on `https://localhost:8443` with the local certificate
 from `haproxy/gateway.pem`. Port 8080 is kept for HTTP tests.
 
-The tests `tests/test_auth_integration.py` and
-`tests/test_workflow_integration.py` use the gateway given by `API_BASE_URL`
-(default `http://localhost:8080`). The second one obtains a token first; the
+The live checks in `tests/test_integration.py` use the gateway given by `API_BASE_URL`
+(default `http://localhost:8080`). The script obtains a token first; the
 credentials can be changed with `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD`.
 
 HAProxy gives access to the five services through **http://localhost:8080**.
@@ -429,7 +433,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## API tests and historical documentation
 
-The orders Bruno collection is in `services/order/docs/bruno_collection/`.
+The single Bruno collection is in `docs/bruno_collection/`.
 The `Docker Compose` environment uses port `13001`.
 Before creating an order, register the client, deposit balance and set
 `clientId` in the Bruno environment. The five-piece example requires 50 units.
@@ -440,13 +444,13 @@ be deleted or manually marked ready; manufacturing events make them ready, then
 the delivery API can mark them sent or delivered. Machine queue operations cannot
 create unapproved work or remove pieces belonging to an order. Deleting an order
 in the flow returns 409.
-The `API Gateway` Bruno environment lets you run the collection through port
+The `Gateway` Bruno environment lets you run the collection through port
 `8080`.
 
-The root `docs/` folder and the legacy UML diagrams preserve historical
-documentation of the original application. Their routes and diagrams do not
-necessarily represent the current architecture; to test orders, use the
-collection mentioned above.
+The single API collection is shared by all services. UML diagrams in `docs/uml/`
+and the files in `docs/reference/` preserve historical/reference material; they
+do not necessarily represent the current saga. The English document remains at
+`Documentation.md`.
 
 ## Domain events and recovery
 
@@ -516,6 +520,7 @@ python tests/test_domain_events.py --service order
 python tests/test_domain_events.py --service payment
 python tests/test_domain_events.py --service delivery
 python tests/test_domain_events.py --service machine
+python tests/test_domain_events.py --service client
 python tests/test_refresh_tokens.py
 python tests/test_event_logger.py
 ```
@@ -538,16 +543,17 @@ Usa el entorno Python existente del proyecto, sin necesidad de activarlo:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install httpx
-.\.venv\Scripts\python.exe tests/test_auth_integration.py
-.\.venv\Scripts\python.exe tests/test_workflow_integration.py
+.\.venv\Scripts\python.exe tests/test_integration.py
 ```
 
-La primera prueba comprueba autenticación, permisos, JWT y refresh tokens.
-La segunda crea un cliente, ingresa 100, pide dos piezas, espera la fabricación
-y completa la entrega. Debe terminar con un mensaje similar a:
+La prueba comprueba autenticación y permisos, completa un pedido y verifica
+las compensaciones por saldo insuficiente y por dirección fuera de cobertura.
+Muestra mensajes similares a:
 
 ```text
-PASS order=15, delivery=..., pieces=Manufactured, status=Delivered, balance=80
+PASS delivered: order=15
+PASS authentication and ownership
+PASS compensated: order=16, balance=0
 ```
 
 El número del pedido varía. Las pruebas conservan los registros creados.
@@ -556,11 +562,10 @@ y sustituyendo `15` por el número que muestre tu prueba.
 Si falla algún paso, ejecuta `docker compose logs --tail=100`.
 Para detener el programa conservando los datos, ejecuta `docker compose down`.
 
-For changes to recovery or auditing, also run these Docker checks:
+To include recovery and auditing, run the same script with `--all`:
 
 ```powershell
-python tests/test_event_recovery_integration.py
-python tests/test_event_audit_integration.py
+python tests/test_integration.py --all
 ```
 
 These checks temporarily stop containers and restore them in `finally` blocks.
@@ -572,12 +577,15 @@ repository instead of being repeated for each service.
 
 1. Create the client with `POST /clients` in clients.
 2. Deposit balance with `POST /payment/{client_id}/deposit` in payments.
-3. Create the order with `POST /order` in orders. The service validates the
-   client in its local catalogue, calculates the amount and publishes
-   `order.created`. Payment independently evaluates that fact. The fixed price is **10 balance units per piece**; it is not
-   sent in the request.
-4. After accepting the payment outcome, order publishes `order.paid`. Machine
-   persists its work and delivery creates a pending shipment independently.
+3. Create the order with `POST /order`. Orders validates its local client copy,
+   calculates the amount and creates the explicit saga. It requests a payment
+   reservation and a provisional delivery through `manufacturing.commands`.
+   The fixed price is **10 balance units per piece**.
+4. Payment reserves available balance and Delivery validates postal coverage
+   (01, 20 or 48). Once both accept, the saga confirms payment and publishes
+   `order.paid`. Machine persists its work and Delivery activates its entry.
+   A rejection instead releases the reservation and cancels the provisional
+   delivery; the order becomes `Suspended` once both compensations finish.
 5. Machines reports the start and end of each piece through the
    manufacturing facts. Once all pieces finish, order publishes
    `order.manufactured`. Delivery makes its shipment ready and publishes
@@ -590,8 +598,8 @@ repository instead of being repeated for each service.
 Order status summary:
 
 ```text
-PendingPayment -> (payment accepted) -> Pending -> ReadyForDelivery -> Delivered
-PendingPayment -> (insufficient balance) -> Rejected
+PendingPayment -> (both accepted, payment confirmed) -> Manufacturing -> ReadyForDelivery -> Delivered
+PendingPayment -> (payment or delivery rejected) -> Compensating -> Suspended
 ```
 
 Example order creation:
@@ -601,25 +609,25 @@ Example order creation:
   "client_id": 1,
   "number_of_pieces": 3,
   "description": "Test order",
-  "address": "Calle Mayor 10"
+  "address": "Calle Mayor 10, 01001"
 }
 ```
 
-The amount of that order is 30. A non-existent client returns 404; with
-insufficient balance the order becomes `Rejected` and neither manufacturing nor
-delivery is requested. Orders rejected by payments are recorded as `Rejected`.
+The amount of that order is 30. A non-existent client returns 404. With
+insufficient balance or a postal code outside coverage, the saga compensates
+the provisional operations and suspends the order without starting manufacturing.
 
 Creation returns 202 with `PendingPayment` while the event is processed.
-If a service fails after charging, the order stays `Pending` with
-`integration_error`. Pending outbox publications are retried after outages, also after a
+During a temporary outage the saga waits for its pending response. Pending
+outbox publications are retried after outages, also after a
 restart. A retry can be forced with `POST /order/{order_id}/retry`.
 The order identifier prevents repeated charges or duplicate deliveries.
-Orders in the flow are kept; deleting them returns 409 to avoid reusing charge
-identifiers without a cancellation/refund process.
+Orders in the flow are kept; deleting them returns 409 to preserve saga
+identifiers and the audit trail.
 
 Orders keeps the pieces in its database. `GET /order/{order_id}/pieces` shows
-their status. Machines recovers the paid pieces that are queued or being
-manufactured from orders and retries its notifications if the connection fails.
+their status. Machine recovers queued or interrupted pieces from its own local
+database and retries its notifications if the connection fails.
 If deliveries cannot publish a completed-delivery notice, it keeps
 its event in the local outbox and retries publication. The order update happens
 when its subscriber commits the received fact.

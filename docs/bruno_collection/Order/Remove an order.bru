@@ -11,8 +11,8 @@ delete {
 }
 
 assert {
-  res.status: eq 200
-  res.body.id: eq {{orderId}}
+  res.status: eq 409
+  res.body.detail: isNotEmpty
 }
 
 settings {

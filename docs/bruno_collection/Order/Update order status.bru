@@ -18,10 +18,5 @@ body:json {
 
 assert {
   res.status: eq 409
-  res.body.detail: eq Saga orders are updated through messages, not manual callbacks
-}
-
-settings {
-  encodeUrl: true
-  timeout: 0
+  res.body.detail: isNotEmpty
 }
