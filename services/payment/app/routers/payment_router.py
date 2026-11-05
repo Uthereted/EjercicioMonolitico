@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """FastAPI router definitions."""
-import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,48 +7,13 @@ from app.dependencies import get_db, client_exists
 from app.sql import crud
 from app.auth_verifier import verify_jwt  # Importación del verificador JWT
 from ..sql import schemas
-from .router_utils import raise_and_log_error
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get(
-    "/",
-    summary="Health check endpoint",
-    response_model=schemas.Message,
-)
-async def health_check():
-    """Endpoint to check if everything started correctly."""
-    logger.debug("GET '/' endpoint called.")
-    return {
-        "detail": "OK"
-    }
-
-
-async def _ensure_client_exists(client_id: int):
-    """Validates the client exists in the Client service, raising HTTP errors otherwise."""
-    try:
-        exists = await client_exists(client_id)
-    except (ValueError, KeyError):
-        raise_and_log_error(
-            logger,
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Client service is currently unreachable"
-        )
-        return  # pragma: no cover - raise_and_log_error always raises
-    if not exists:
-        raise_and_log_error(
-            logger, status.HTTP_404_NOT_FOUND, f"Client {client_id} not found"
-        )
-
-
 def _check_client_ownership(client_id: int, token_payload: dict):
-    """
-    Verifica que el token pertenezca al propio cliente o sea una petición inter-servicio/admin.
-    """
-    # Si es una llamada interna de microservicio o admin, se permite la operación
-    if token_payload.get("service") is True or "admin" in token_payload.get("roles", []):
+    """Allow an administrator or the client identified by the signed token."""
+    if "admin" in token_payload.get("roles", []):
         return
 
     # User IDs and client IDs belong to separate tables.
@@ -75,32 +39,10 @@ async def deposit(
     token_payload: dict = Depends(verify_jwt)  # Inyección de seguridad JWT
 ):
     """Perform a deposit endpoint. Called directly by the UI (step 2 in the flow)."""
-    logger.debug("POST '/payment/%i/deposit' endpoint called.", client_id)
     _check_client_ownership(client_id, token_payload)
-    await _ensure_client_exists(client_id)
+    if not await client_exists(client_id):
+        raise HTTPException(404, f"Client {client_id} not found")
     return await crud.deposit(db, client_id, deposit_schema.amount)
-
-
-@router.post(
-    "/payment/{client_id}/charge",
-    response_model=schemas.Account,
-    summary="Legacy direct charge (disabled; use the order saga)",
-    responses={
-        status.HTTP_409_CONFLICT: {
-            "model": schemas.Message, "description": "Payment is managed by the order saga"
-        }
-    },
-    tags=["Payment"]
-)
-async def charge(
-    client_id: int,
-    charge_schema: schemas.ChargePost,
-    db: AsyncSession = Depends(get_db),
-    token_payload: dict = Depends(verify_jwt)  # Inyección de seguridad JWT
-):
-    """Direct charges are disabled; the order saga reserves and confirms payment."""
-    _check_client_ownership(client_id, token_payload)
-    raise HTTPException(409, "Direct charges are disabled; payment is managed by the order saga")
 
 
 @router.get(
@@ -115,7 +57,6 @@ async def get_balance(
     token_payload: dict = Depends(verify_jwt)  # Inyección de seguridad JWT
 ):
     """Retrieve a client's current balance."""
-    logger.debug("GET '/payment/%i/balance' endpoint called.", client_id)
     _check_client_ownership(client_id, token_payload)
     account = await crud.get_or_create_account(db, client_id)
     return schemas.BalanceResponse(client_id=client_id, balance=account.balance)

@@ -2,11 +2,10 @@ from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-class TokenResponse(BaseModel):
+
+class UserTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-
-class UserTokenResponse(TokenResponse):
     refresh_token: str
     expires_in: int = 3600
     refresh_expires_in: int

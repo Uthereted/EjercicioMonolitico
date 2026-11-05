@@ -9,11 +9,3 @@ async def get_order_list(db):
 
 async def get_order(db, order_id):
     return await db.get(models.Order, order_id)
-
-
-async def delete_order(db, order_id):
-    order = await get_order(db, order_id)
-    if order is not None:
-        await db.delete(order)
-        await db.commit()
-    return order

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
@@ -18,20 +18,6 @@ router = APIRouter(
 )
 async def health_check():
     return {"detail": "OK"}
-
-@router.post(
-    "/delivery",
-    response_model=schemas.Delivery,
-    summary="Legacy direct delivery creation (disabled; use the order saga)",
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_delivery(
-    delivery_schema: schemas.DeliveryPost,
-    db: AsyncSession = Depends(dependencies.get_db),
-    token_payload: dict = Depends(verify_jwt)
-):
-    """Delivery creation is owned by the order saga."""
-    raise HTTPException(409, "Direct delivery creation is disabled; use the order saga")
 
 
 @router.get(
@@ -68,27 +54,6 @@ async def get_single_delivery(
 
     return delivery
 
-
-@router.delete(
-    "/delivery/{delivery_id}",
-    response_model=schemas.Delivery,
-    summary="Delete a delivery",
-)
-async def remove_delivery(
-    delivery_id: int,
-    db: AsyncSession = Depends(dependencies.get_db),
-    token_payload: dict = Depends(verify_jwt)
-):
-    """Delete a delivery."""
-    delivery = await crud.delete_delivery(db, delivery_id)
-
-    if delivery is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Delivery {delivery_id} not found",
-        )
-
-    return delivery
 
 @router.patch(
     "/delivery/{delivery_id}/status",

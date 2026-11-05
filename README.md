@@ -216,12 +216,12 @@ Other endpoints of the stack:
 ### Authentication after the merge
 
 Clients uses the single public registration route `POST /auth/register`,
-`POST /auth/token` (HTTP Basic; `GET` remains compatible) and `GET /auth/public-key`. In the gateway they
-are `/api/auth/register`, `/api/auth/token` and `/api/auth/public-key`.
+and `POST /auth/token` for login with HTTP Basic. In the gateway they
+are `/api/auth/register` and `/api/auth/token`.
 Login returns an RS256 JWT valid for one hour. For protected operations, send
-`Authorization: Bearer <access_token>`: creating/reading/listing clients, creating/listing orders and
-querying/depositing/charging balance, all machine operations, and delivery CRUD
-and status changes. Delivery's health endpoint stays public. The other routes keep their previous
+`Authorization: Bearer <access_token>`: reading/listing/deleting clients, creating/listing orders,
+querying/depositing balance, machine status, and delivery reads/status changes.
+Delivery's health endpoint stays public. The other routes keep their previous
 behavior; this integration does not add authentication to every API.
 
 Machine and delivery validate RS256, issuer `manufacturing-client`, audience
@@ -241,8 +241,6 @@ and postal code. There is no periodic client catalogue publication. This setup
 assumes the services start with empty databases together; clearing one consumer's
 client data later does not rebuild old clients automatically. Public signing-key
 publication remains periodic so JWT verification can bootstrap independently.
-The optional service-token HTTP API is retained for external compatibility but
-is not used by the internal choreography.
 
 Users register publicly, then read/list their own client using its signed
 `client_id`. Admins may read/list all clients and delete them.
@@ -251,8 +249,8 @@ Self-registration is a single `POST /api/auth/register` with `username`,
 credentials, client profile and `client.created` event in one transaction.
 Its response includes the client `id`, `username`, name, email and address.
 Then log in with Basic credentials: the first token already contains `client_id`
-for orders/payments. A duplicate username/email returns 409. Registration and
-the public-key endpoint stay public; login requires valid credentials.
+for orders/payments. A duplicate username/email returns 409. Registration stays
+public; login requires valid credentials. Signing keys are distributed by events.
 
 The database keeps credentials/roles (`users`) separate from delivery details
 (`clients`); they belong to the same client service. `auth` names the login,
@@ -287,8 +285,7 @@ The gateway paths are `/api/auth/refresh` and `/api/auth/logout`.
 Refresh tokens are random opaque values, stored only as SHA-256 hashes in the
 `refresh_tokens` table in the existing client database. Startup creates that new
 table without deleting existing data. Sessions persist across restarts and
-renew with the current user roles, client association and signing key. Service
-tokens still use service credentials and do not receive refresh tokens.
+renew with the current user roles, client association and signing key.
 
 Bruno includes `Auth / Request token`, `Auth / Refresh token`, `Auth / Logout`
 and `Client / List clients`. Select the
@@ -339,8 +336,9 @@ between services still use the Docker network.
 | Gateway status | GET | `/health` |
 | Register client and login account | POST | `/api/auth/register` |
 | Delete client (admin only) | DELETE | `/api/clients/{id}` |
-| Get token (HTTP Basic) | POST / GET | `/api/auth/token` |
-| Get public key | GET | `/api/auth/public-key` |
+| Get token (HTTP Basic) | POST | `/api/auth/token` |
+| Refresh token | POST | `/api/auth/refresh` |
+| Logout | POST | `/api/auth/logout` |
 | List clients | GET | `/api/clients` |
 | Get client | GET | `/api/clients/{id}` |
 | Deposit balance | POST | `/api/payments/{client_id}/deposit` |
@@ -348,16 +346,14 @@ between services still use the Docker network.
 | Create / list orders | POST / GET | `/api/orders` |
 | Get order | GET | `/api/orders/{id}` |
 | Get order pieces | GET | `/api/orders/{id}/pieces` |
-| Retry pending order | POST | `/api/orders/{id}/retry` |
-| Get pieces | GET | `/api/pieces` |
 | Get machine status | GET | `/api/machine/status` |
-| Create / list deliveries | POST / GET | `/api/deliveries` |
+| List deliveries | GET | `/api/deliveries` |
 | Get delivery | GET | `/api/deliveries/{id}` |
 | Update delivery | PATCH | `/api/deliveries/{id}/status` |
 
 JSON bodies and statuses are the same as in the services' own APIs.
 For example, a delivery is completed with `{"status":"Delivered"}`.
-The older URLs `/api/order/order` and `/api/delivery/delivery` remain available.
+Only the gateway routes listed above are exposed; legacy aliases were removed.
 Unknown routes return 404. `/health` confirms that the gateway is up;
 the availability of each service is checked through its requests and through
 the HAProxy statistics at http://localhost:8404 (user and password `admin`).
@@ -461,13 +457,12 @@ The single Bruno collection is in `docs/bruno_collection/`.
 The `Docker Compose` environment uses port `13001`.
 Before creating an order, register the client, deposit balance and set
 `clientId` in the Bruno environment. The five-piece example requires 50 units.
-The machine query uses `machineURL`. Manual order/payment/piece callbacks return
-409 for saga orders; their state is updated through messages. Direct payment
-charges and direct delivery creation also return 409. Workflow deliveries cannot
-be deleted or manually marked ready; manufacturing events make them ready, then
-the delivery API can mark them sent or delivered. Machine queue operations cannot
-create unapproved work or remove pieces belonging to an order. Deleting an order
-in the flow returns 409.
+Order requests use `orderURL`; machine status uses `machineURL`. The API keeps
+registration/login, client reads/deletion, deposits/balance, order creation and
+progress, machine status, and delivery reads/status changes. Manual workflow
+callbacks, direct charges, delivery creation/deletion, order deletion, queue
+mutations and global piece endpoints were removed. Manufacturing events make
+deliveries ready; the API only marks them `Sent` or `Delivered`. Retries are automatic.
 The `Gateway` Bruno environment lets you run the collection through port
 `8080`.
 
@@ -644,10 +639,10 @@ the provisional operations and suspends the order without starting manufacturing
 Creation returns 202 with `PendingPayment` while the event is processed.
 During a temporary outage the saga waits for its pending response. Pending
 outbox publications are retried after outages, also after a
-restart. A retry can be forced with `POST /order/{order_id}/retry`.
+restart.
 The order identifier prevents repeated charges or duplicate deliveries.
-Orders in the flow are kept; deleting them returns 409 to preserve saga
-identifiers and the audit trail.
+Orders are retained to preserve saga identifiers and the audit trail; there is
+no order deletion endpoint.
 
 Orders keeps the pieces in its database. `GET /order/{order_id}/pieces` shows
 their status. Machine recovers queued or interrupted pieces from its own local

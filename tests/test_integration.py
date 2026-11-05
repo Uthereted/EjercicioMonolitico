@@ -117,22 +117,21 @@ def run(all_checks=False):
             assert balance(customer) == 100 - order['total_price']
             print(f"PASS delivered: order={order['id']}", flush=True)
 
-        wait_for(lambda: request('GET', '/api/auth/public-key'))
+        token = wait_for(lambda: request('POST', '/api/auth/token', auth=(
+            os.getenv('TEST_AUTH_USERNAME', 'admin'), os.getenv('TEST_AUTH_PASSWORD', 'admin123'))))
         request('GET', '/api/orders', expected=401)
         request('POST', '/api/auth/token', auth=('admin', 'incorrect'), expected=401)
-        token = request('POST', '/api/auth/token', auth=(
-            os.getenv('TEST_AUTH_USERNAME', 'admin'), os.getenv('TEST_AUTH_PASSWORD', 'admin123')))
         client.headers['Authorization'] = f"Bearer {token['access_token']}"
         request('POST', '/api/clients', expected=405, json={})
 
         customer, order = new_order(pieces=2)
-        request('POST', f"/api/payments/{customer['id']}/charge", expected=409,
+        request('POST', f"/api/payments/{customer['id']}/charge", expected=404,
                 json={'order_id': order['id'], 'amount': order['total_price']})
-        request('POST', '/api/deliveries', expected=409, json={
+        request('POST', '/api/deliveries', expected=405, json={
             'order_id': order['id'], 'client_id': customer['id'], 'address': order['address']})
-        request('PATCH', f"/api/orders/{order['id']}/status", expected=409, json={'status': 'Finished'})
+        request('PATCH', f"/api/orders/{order['id']}/status", expected=404, json={'status': 'Finished'})
         finish(customer, order)
-        request('DELETE', f"/api/orders/{order['id']}", expected=409)
+        request('DELETE', f"/api/orders/{order['id']}", expected=405)
 
         username, password = uuid.uuid4().hex, uuid.uuid4().hex
         registered = request('POST', '/api/auth/register', expected=201, json={

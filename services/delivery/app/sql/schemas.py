@@ -5,11 +5,6 @@ from typing import Literal, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict  # pylint: disable=no-name-in-module
 
-class Message(BaseModel):
-    """Generic API message."""
-
-    detail: Optional[str] = None
-
 
 class DeliveryBase(BaseModel):
     """Shared delivery fields."""
@@ -25,11 +20,6 @@ class DeliveryBase(BaseModel):
     )
 
 
-class DeliveryPost(DeliveryBase):
-    """Fields required to create a delivery."""
-    status: Literal["Pending"] = "Pending"
-
-
 class Delivery(DeliveryBase):
     """Delivery returned by the API."""
 
@@ -42,5 +32,5 @@ class Delivery(DeliveryBase):
 
 
 class DeliveryStatusUpdate(BaseModel):
-    status: Literal["Ready", "Sent", "Delivered"]
+    status: Literal["Sent", "Delivered"]
     tracking_number: Optional[str] = Field(default=None, max_length=100)

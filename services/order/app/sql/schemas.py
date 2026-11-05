@@ -1,11 +1,7 @@
-"""REST contracts for orders and manufacturing callbacks."""
+"""REST contracts for order creation and progress queries."""
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
-
-
-class Message(BaseModel):
-    detail: Optional[str] = None
 
 
 class OrderBase(BaseModel):
@@ -35,23 +31,8 @@ class Order(OrderBase):
     update_date: datetime
 
 
-class OrderStatusUpdate(BaseModel):
-    status: Literal["Finished", "Delivered"]
-
-
 class Piece(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     order_id: int
     status: str
-
-
-class PieceStatusUpdate(BaseModel):
-    status: Literal["Manufacturing", "Manufactured"]
-
-
-class PaymentResult(BaseModel):
-    client_id: int = Field(gt=0)
-    amount: int = Field(gt=0)
-    accepted: bool
-    reason: str = "Payment rejected"

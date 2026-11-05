@@ -230,7 +230,7 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
                     delivery = await db.get(models.Delivery, result.delivery_id)
                     self.assertEqual(delivery.status, "Provisional" if result.accepted else "Suspended")
                     with self.assertRaises(HTTPException) as caught:
-                        await workflow.set_delivery_status(db, delivery.id, schemas.DeliveryStatusUpdate(status="Ready"))
+                        await workflow.set_delivery_status(db, delivery.id, schemas.DeliveryStatusUpdate(status="Delivered"))
                     self.assertEqual(caught.exception.status_code, 409)
         async with database.SessionLocal() as db:
             self.assertEqual(await db.scalar(select(func.count()).select_from(models.Delivery)), len(addresses))

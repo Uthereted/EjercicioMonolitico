@@ -1,13 +1,10 @@
 """Persist order facts; subscribers decide their own next steps."""
-from collections import defaultdict
-import asyncio
 from fastapi import HTTPException
 from sqlalchemy import select
 from .events import record_event
 from .sql import database, models
 
 UNIT_PRICE = 10
-locks = defaultdict(asyncio.Lock)
 
 
 async def validate_client(client_id):
@@ -48,15 +45,6 @@ async def stage_order_facts(db, order):
     if order.status not in ("ReadyForDelivery", "Delivered"):
         order.status = "Manufacturing"
     order.integration_error = None
-
-
-async def resume_order(db, order):
-    async with locks[order.id]:
-        await db.refresh(order)
-        await stage_order_facts(db, order)
-        await db.commit()
-        await db.refresh(order)
-        return order
 
 
 async def bootstrap():

@@ -1,5 +1,3 @@
-import os
-import secrets
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -14,13 +12,6 @@ router = APIRouter()
 security_basic = HTTPBasic()
 
 
-@router.get("/auth/public-key", tags=["Auth"])
-async def get_public_key():
-    """Devuelve la clave pública RSA actual en formato PEM."""
-    return {"public_key": crypto.get_public_key_pem()}
-
-
-@router.get("/auth/token", response_model=schemas.UserTokenResponse, tags=["Auth"])
 @router.post("/auth/token", response_model=schemas.UserTokenResponse, tags=["Auth"])
 async def login_basic_auth(
         response: Response,
@@ -56,25 +47,6 @@ async def refresh_tokens(body: schemas.RefreshTokenRequest, response: Response,
 async def logout(body: schemas.RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
     await auth_sessions.logout(db, body.refresh_token)
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
-
-
-@router.post("/auth/service-token", response_model=schemas.TokenResponse, tags=["Auth"])
-async def login_service(credentials: HTTPBasicCredentials = Depends(security_basic)):
-    """Issue a named service identity using its own configured credential."""
-    secret_name = {"order-service": "ORDER_SERVICE_AUTH_SECRET",
-                   "payment-service": "PAYMENT_SERVICE_AUTH_SECRET"}.get(credentials.username)
-    if secret_name is None:
-        raise HTTPException(401, "Invalid service credentials", headers={"WWW-Authenticate": "Basic"})
-    secret = os.getenv(secret_name, "")
-    if not secret:
-        raise HTTPException(503, "Service authentication is not configured")
-    valid_secret = secrets.compare_digest(credentials.password.encode(), secret.encode())
-    if not valid_secret:
-        raise HTTPException(401, "Invalid service credentials",
-                            headers={"WWW-Authenticate": "Basic"})
-    return schemas.TokenResponse(access_token=crypto.create_jwt_token({
-        "sub": f"service:{credentials.username}", "service_name": credentials.username, "roles": [],
-    }))
 
 
 @router.post("/auth/register", response_model=schemas.ClientResponse, status_code=status.HTTP_201_CREATED, tags=["Client"])

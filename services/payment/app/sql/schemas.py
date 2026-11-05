@@ -5,11 +5,6 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict  # pylint: disable=no-name-in-module
 
 
-class Message(BaseModel):
-    """Message schema definition."""
-    detail: Optional[str] = Field(example="error or success message")
-
-
 class TransactionBase(BaseModel):
     """Transaction base schema definition."""
     amount: int = Field(
@@ -21,14 +16,6 @@ class TransactionBase(BaseModel):
 
 class DepositPost(TransactionBase):
     """Schema definition to perform a deposit."""
-
-
-class ChargePost(TransactionBase):
-    """Schema definition to perform a charge."""
-    order_id: int = Field(
-        description="Identifier of the order that originates the charge.",
-        example=1
-    )
 
 
 class Transaction(TransactionBase):

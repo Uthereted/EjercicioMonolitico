@@ -4,8 +4,7 @@ import logging
 import os
 from contextlib import suppress
 from random import randint
-from sqlalchemy import select, delete
-from fastapi import HTTPException
+from sqlalchemy import select
 from .events import record_event
 from .sql import database
 from .sql.models import WorkPiece
@@ -67,24 +66,6 @@ class Machine:
                 logger.exception("Local manufacturing will retry")
                 await asyncio.sleep(1)
 
-    async def add_pieces_to_queue(self, piece_ids):
-        async with database.SessionLocal() as db:
-            for piece_id in piece_ids:
-                if type(piece_id) is not int or piece_id <= 0:
-                    raise ValueError("Invalid piece identifier")
-                piece = await db.get(WorkPiece, piece_id)
-                if piece is None or piece.order_id is None:
-                    raise HTTPException(409, "Only pieces received from approved orders may enter manufacturing")
-
-    async def remove_piece_from_queue(self, piece_id):
-        async with database.SessionLocal() as db:
-            piece = await db.get(WorkPiece, piece_id)
-            if piece is not None and piece.order_id is not None:
-                raise HTTPException(409, "Order manufacturing is managed through messages")
-            result = await db.execute(delete(WorkPiece).where(
-                WorkPiece.id == piece_id, WorkPiece.status == "Queued"))
-            await db.commit()
-            return result.rowcount == 1
 
     async def list_queued_pieces(self):
         async with database.SessionLocal() as db:
