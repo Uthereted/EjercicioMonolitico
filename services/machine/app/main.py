@@ -5,13 +5,12 @@ from fastapi import FastAPI, Depends, status
 from app.dependencies import get_machine, stop_machine
 from app.async_machine import Machine
 from app import messaging, events
-from app.sql import database, models
+from app.sql import database
 from app.auth_verifier import fetch_public_key, verify_jwt
 
 @asynccontextmanager
 async def lifespan(app):
-    async with database.engine.begin() as connection:
-        await connection.run_sync(models.Base.metadata.create_all)
+    await database.initialize()
     await fetch_public_key()
     machine = await get_machine()
     publisher = asyncio.create_task(events.publish_pending_events())

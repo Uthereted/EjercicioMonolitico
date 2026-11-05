@@ -1,26 +1,7 @@
 """Publish completed deliveries, retaining pending events across outages."""
-import asyncio
-import logging
-import os
 from .events import record_event
 from fastapi import HTTPException
-from sqlalchemy import inspect, select, text
-from .sql import database, models, crud
-
-logger = logging.getLogger(__name__)
-RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
-EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "manufacturing.events")
-RETRY_SECONDS = float(os.getenv("REST_RETRY_SECONDS", "5"))
-
-
-def upgrade(connection):
-    columns = {column["name"] for column in inspect(connection).get_columns("delivery")}
-    if "order_notified" not in columns:
-        connection.execute(text("ALTER TABLE delivery ADD COLUMN order_notified BOOLEAN NOT NULL DEFAULT 0"))
-    if "workflow_managed" not in columns:
-        connection.execute(text("ALTER TABLE delivery ADD COLUMN workflow_managed BOOLEAN NOT NULL DEFAULT 0"))
-    for index in models.Delivery.__table__.indexes:
-        index.create(connection, checkfirst=True)
+from .sql import crud
 
 
 async def notify_order(db, delivery):

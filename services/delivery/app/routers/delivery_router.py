@@ -102,28 +102,3 @@ async def update_delivery_status(
     token_payload: dict = Depends(verify_jwt)
 ):
     return await workflow.set_delivery_status(db, delivery_id, update)
-
-'''
-@router.patch("/delivery/{delivery_id}/status", response_model=schemas.Delivery,
-              summary="Update delivery state and notify the order")
-async def update_delivery_status(delivery_id: int, update: schemas.DeliveryStatusUpdate,
-                                 db: AsyncSession = Depends(dependencies.get_db)):
-    delivery = await crud.get_delivery(db, delivery_id)
-    if delivery is None:
-        raise HTTPException(404, "Delivery not found")
-    stages = {"Pending": 0, "Ready": 1, "Sent": 2, "Delivered": 3}
-    current = stages.get(delivery.status, 0)
-    target = stages[update.status]
-    # Retried readiness callbacks must not move a sent/delivered parcel backwards.
-    if target < current:
-        return delivery
-    if current == 0 and target > 1:
-        raise HTTPException(409, "Manufacturing has not finished")
-    delivery.status = update.status
-    if update.tracking_number is not None:
-        delivery.tracking_number = update.tracking_number
-    await db.commit()
-    await db.refresh(delivery)
-    await workflow.notify_order(db, delivery)
-    return delivery
-'''

@@ -29,7 +29,7 @@ services:
     ports:
         - "13001:8000"
     volumes:
-        - "./services/order/db_volume:/volume"
+        - "./services/order/data:/volume"
     environment:
         PYTHONUNBUFFERED: 1
         SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
@@ -49,7 +49,7 @@ services:
     ports:
       - '13004:8000'
     volumes:
-      - '.services/delivery/delivery_volume:/volume'
+      - './services/delivery/data:/volume'
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
@@ -67,7 +67,7 @@ services:
     ports:
       - '13002:8000'
     volumes:
-      - machine_data:/volume
+      - './services/machine/data:/volume'
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/machine.db
@@ -86,7 +86,7 @@ services:
     ports:
       - '13005:8000'
     volumes:
-      - '.services/client/db_volume:/volume'
+      - './services/client/data:/volume'
     environment:
       - PYTHONUNBUFFERED=1
       - ORDER_SERVICE_AUTH_SECRET=${ORDER_SERVICE_AUTH_SECRET:-development-order-service-secret-change-me}
@@ -107,7 +107,7 @@ services:
     ports:
       - '13006:8000'
     volumes:
-      - '.services/payment/payment_db_volume:/volume'
+      - './services/payment/data:/volume'
     environment:
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/payment.db
@@ -166,5 +166,4 @@ services:
 
 volumes:
   rabbitmq_data:
-  machine_data:
   audit_data:

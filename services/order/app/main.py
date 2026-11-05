@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from my_chassis import configure_logging, create_health_router
 from app import messaging, workflow, events, saga
 from app.routers import main_router
-from app.sql import database, migrations, models
+from app.sql import database
 from app.auth_verifier import fetch_public_key
 
 configure_logging("order-service")
@@ -12,9 +12,7 @@ configure_logging("order-service")
 
 @asynccontextmanager
 async def lifespan(app):
-    async with database.engine.begin() as conn:
-        await conn.run_sync(models.Base.metadata.create_all)
-        await conn.run_sync(migrations.upgrade)
+    await database.initialize()
     await workflow.bootstrap()
     await fetch_public_key()
     tasks = [asyncio.create_task(events.publish_pending_events()),

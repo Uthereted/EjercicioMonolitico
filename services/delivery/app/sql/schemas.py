@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Classes for Request/Response schema definitions."""
 # pylint: disable=too-few-public-methods
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict  # pylint: disable=no-name-in-module
 

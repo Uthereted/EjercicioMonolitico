@@ -12,7 +12,7 @@ services:
       - "13001:8000"
 
     volumes:
-      - "./db_volume:/volume"
+      - "./data:/volume"
 
     environment:
       PYTHONUNBUFFERED: 1

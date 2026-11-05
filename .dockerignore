@@ -5,11 +5,9 @@
 **/*.db
 .env
 .idea
-.services
 state
 deliverables
-**/db_volume
-**/delivery_volume
-**/payment_db_volume
+**/data
+.backups
 
 build

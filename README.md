@@ -35,14 +35,19 @@ docs/             # Historical documentation (original application)
 
 Each service folder contains its code in `app/`, its Dockerfile and its
 `requirements.txt` with the dependencies it uses.
-The services use `entrypoint.sh` and Hypercorn, except machines, which keeps
-`main.py` in its root and starts with Uvicorn.
+All five APIs keep their entry point in `app/main.py`. The services use
+`entrypoint.sh` and Hypercorn, except machines, which starts with Uvicorn.
 
-Orders includes a standalone Compose file at `services/order/compose.yml`,
-its volume in `services/order/db_volume/` and documentation in
-`services/order/docs/`. Clients uses `db_volume/`, deliveries uses
-`delivery_volume/` and payments uses `payment_db_volume/`. The databases
-(SQLite) are created automatically on startup if they do not exist.
+Each API stores its SQLite database in `services/<service>/data/`, both for local
+development and through Docker bind mounts. Database setup lives in
+`app/sql/database.py`; schema upgrades live in `app/sql/migrations.py` when needed.
+The application lifespan calls `database.initialize()` on startup.
+Orders also includes a standalone Compose file at `services/order/compose.yml`
+and documentation in `services/order/docs/`.
+
+The previous database locations were archived under
+`.backups/service-layout-2026-11-05/` during reorganization. That local folder is
+excluded from Git and Docker builds. No existing database records were removed.
 
 ## Shared chassis 0.5.0
 
@@ -415,7 +420,7 @@ local one. The orders example is in `services/order/dot_env_example`.
 For machines, run from `services/machine`:
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## API tests and historical documentation
@@ -492,7 +497,7 @@ requests still require client/auth. Unavailable downstream consumers catch up
 from durable queues after restarting. APIs expose eventual progress, not an
 immediate guarantee that asynchronous processing has completed.
 
-Machine has its own SQLite database on the `machine_data` volume. Both queued
+Machine has its own SQLite database in `services/machine/data/machine.db`. Both queued
 and interrupted work survive restarts. It never polls orders for recovery.
 Payment outcomes, including rejections, remain stable after duplicate events.
 Delivery creation is unique per workflow order and cannot regress after a late

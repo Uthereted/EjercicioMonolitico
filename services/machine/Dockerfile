@@ -7,7 +7,6 @@ COPY vendor/microservice_chassis-0.5.0-py3-none-any.whl /wheels/microservice_cha
 RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.5.0-py3-none-any.whl && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copia todo el contenido de services/machine al contenedor
-COPY services/machine/ .
+COPY services/machine/app ./app
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,6 +1,7 @@
 COMPOSE_PROJECT_NAME=order-service
 
-SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:///./orders.db
+# Optional override. By default, the database lives in services/order/data/orders.db.
+# SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:///./data/orders.db
 ORDER_SERVICE_AUTH_SECRET=
 
 RABBITMQ_URL=amqp://manufacturing:manufacturing@localhost:5672/

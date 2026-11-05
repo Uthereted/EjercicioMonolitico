@@ -27,13 +27,21 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         async with database.engine.begin() as conn:
             await conn.run_sync(database.Base.metadata.drop_all)
-            await conn.run_sync(database.Base.metadata.create_all)
+        await database.initialize()
 
     async def asyncTearDown(self):
         await database.engine.dispose()
 
     async def send(self, event_type, payload, suffix="1"):
         await events.dispatch(f"{event_type}:{suffix}", event_type, payload, messaging.handle_event)
+
+    async def test_database_initialization_preserves_existing_inbox(self):
+        async with database.SessionLocal() as db:
+            db.add(events.Inbox(event_id="keep-after-initialization"))
+            await db.commit()
+        await database.initialize()
+        async with database.SessionLocal() as db:
+            self.assertIsNotNone(await db.get(events.Inbox, "keep-after-initialization"))
 
     async def facts(self):
         async with database.SessionLocal() as db:

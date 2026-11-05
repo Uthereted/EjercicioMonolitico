@@ -1,6 +1,6 @@
 """Event contracts consumed by this service; no peer implementation imports."""
 from typing import Annotated
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 PositiveID = Annotated[int, Field(gt=0, strict=True)]
 

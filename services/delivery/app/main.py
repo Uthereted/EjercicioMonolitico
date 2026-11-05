@@ -2,16 +2,14 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from .routers import delivery_router
-from .sql import models, database
-from . import workflow, messaging, events, saga
+from .sql import database
+from . import messaging, events, saga
 from .auth_verifier import fetch_public_key
 
 
 @asynccontextmanager
 async def lifespan(app):
-    async with database.engine.begin() as conn:
-        await conn.run_sync(models.Base.metadata.create_all)
-        await conn.run_sync(workflow.upgrade)
+    await database.initialize()
     await fetch_public_key()
     tasks = [asyncio.create_task(events.publish_pending_events()),
              asyncio.create_task(events.consume_events("delivery.domain", messaging.handle_event, topics=messaging.TOPICS)),
