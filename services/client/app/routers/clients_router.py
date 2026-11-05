@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app.dependencies import get_db
 from app.sql import crud, schemas
 from app import crypto, auth_sessions
-from app.auth_verifier import verify_jwt, is_admin, is_client_reader
+from app.auth_verifier import verify_jwt, is_admin
 
 router = APIRouter()
 security_basic = HTTPBasic()
@@ -77,7 +77,7 @@ async def login_service(credentials: HTTPBasicCredentials = Depends(security_bas
     }))
 
 
-@router.post("/auth/register", response_model=schemas.RegisteredClient, status_code=status.HTTP_201_CREATED, tags=["Client"])
+@router.post("/auth/register", response_model=schemas.ClientResponse, status_code=status.HTTP_201_CREATED, tags=["Client"])
 async def register_client(registration: schemas.ClientRegistration, db: AsyncSession = Depends(get_db)):
     """Register the client and its login account together; id is the client id."""
     if registration.roles != ["user"]:
@@ -87,21 +87,9 @@ async def register_client(registration: schemas.ClientRegistration, db: AsyncSes
     except IntegrityError:
         await db.rollback()
         raise HTTPException(409, "Username or email already exists")
-    return schemas.RegisteredClient(
-        **schemas.ClientResponse.model_validate(client).model_dump(), username=registration.username,
+    return schemas.ClientResponse(
+        **schemas.ClientResponse.model_validate(client).model_dump(exclude={'username'}), username=registration.username,
     )
-
-
-@router.post("/clients", response_model=schemas.ClientResponse, status_code=status.HTTP_201_CREATED, tags=["Client"])
-async def create_client(client: schemas.ClientCreate, db: AsyncSession = Depends(get_db),
-                        token_payload: dict = Depends(verify_jwt)):
-    if not is_admin(token_payload) and (
-        token_payload.get("service_name") is not None or token_payload.get("email") != str(client.email)
-    ):
-        raise HTTPException(403, "You can only create your own client")
-    if await crud.get_client_by_email(db, str(client.email), include_deleted=True):
-        raise HTTPException(409, "Client email already exists")
-    return await crud.create_client(db, client)
 
 
 @router.delete("/clients/{client_id}", status_code=204, tags=["Client"])
@@ -119,23 +107,19 @@ async def delete_client(client_id: int, db: AsyncSession = Depends(get_db),
 @router.get("/clients/{client_id}", response_model=schemas.ClientResponse, tags=["Client"])
 async def read_client(client_id: int, db: AsyncSession = Depends(get_db),
                       token_payload: dict = Depends(verify_jwt)):
-    unrestricted = is_admin(token_payload) or is_client_reader(token_payload)
-    if not unrestricted and token_payload.get("client_id") != client_id:
-        # A user may still hold the token issued before creating their client.
-        own_client = await crud.get_client_by_email(db, token_payload.get("email", ""))
-        if own_client is None or own_client.id != client_id:
-            raise HTTPException(403, "You can only read your own client")
-    db_client = await crud.get_client(db, client_id)
-    if not db_client:
+    if not is_admin(token_payload) and token_payload.get("client_id") != client_id:
+        raise HTTPException(403, "You can only read your own client")
+    profiles = await crud.get_client_profiles(db, client_id=client_id)
+    if not profiles:
         raise HTTPException(status_code=404, detail="Client not found")
-    return db_client
+    return profiles[0]
 
 
 @router.get("/clients", response_model=List[schemas.ClientResponse], tags=["Client"])
 async def read_clients(db: AsyncSession = Depends(get_db), token_payload: dict = Depends(verify_jwt)):
     if is_admin(token_payload):
-        return await crud.get_clients(db)
+        return await crud.get_client_profiles(db)
     if token_payload.get("service_name") is not None:
         raise HTTPException(403, "Services cannot list clients")
-    own_client = await crud.get_client_by_email(db, token_payload.get("email", ""))
-    return [own_client] if own_client else []
+    client_id = token_payload.get("client_id")
+    return await crud.get_client_profiles(db, client_id=client_id) if client_id is not None else []

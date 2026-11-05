@@ -18,23 +18,18 @@ class ClientBase(BaseModel):
     name: str
     email: EmailStr
 
-class ClientCreate(ClientBase):
-    address: str = Field(min_length=1, max_length=500, pattern=r"\S")
-    postal_code: str = Field(pattern=r"^[0-9]{5}$")
-
 class ClientResponse(ClientBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    username: Optional[str] = None
     address: Optional[str] = None
     postal_code: Optional[str] = None
     creation_date: Optional[datetime] = None
 
 
-class ClientRegistration(ClientCreate):
+class ClientRegistration(ClientBase):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1)
+    address: str = Field(min_length=1, max_length=500, pattern=r"\S")
+    postal_code: str = Field(pattern=r"^[0-9]{5}$")
     roles: List[str] = Field(default_factory=lambda: ["user"])
-
-
-class RegisteredClient(ClientResponse):
-    username: str

@@ -215,7 +215,7 @@ Other endpoints of the stack:
 
 ### Authentication after the merge
 
-Clients keeps a single `POST /clients` route and adds `POST /auth/register`,
+Clients uses the single public registration route `POST /auth/register`,
 `POST /auth/token` (HTTP Basic; `GET` remains compatible) and `GET /auth/public-key`. In the gateway they
 are `/api/auth/register`, `/api/auth/token` and `/api/auth/public-key`.
 Login returns an RS256 JWT valid for one hour. For protected operations, send
@@ -244,8 +244,8 @@ publication remains periodic so JWT verification can bootstrap independently.
 The optional service-token HTTP API is retained for external compatibility but
 is not used by the internal choreography.
 
-Users may create a client only for the email in their signed token, read that
-client, and list only their own client. Admins may create and read all clients.
+Users register publicly, then read/list their own client using its signed
+`client_id`. Admins may read/list all clients and delete them.
 Self-registration is a single `POST /api/auth/register` with `username`,
 `password`, `name`, `email`, `address` and `postal_code`. It creates the login
 credentials, client profile and `client.created` event in one transaction.
@@ -257,19 +257,21 @@ the public-key endpoint stay public; login requires valid credentials.
 The database keeps credentials/roles (`users`) separate from delivery details
 (`clients`); they belong to the same client service. `auth` names the login,
 refresh and logout operations, not a third entity or microservice. Existing
-accounts and clients are retained. `POST /api/clients` remains available for
-administrators creating customer records without login credentials.
+accounts and clients are retained. There is no separate `POST /api/clients`.
+GET responses use the same public profile fields as registration, including
+`username`, `id`, name, email, address and postal code; credentials are never returned.
 
 In Bruno, use a new `authUsername` and set the secret `authPassword`, run
 `Client / Register client with login`, then `Auth / Request token`. The returned
-`clientId` is ready for deposits and orders. `Create client (admin)` is the
-administrative path for customer records without a login account.
+`clientId` is ready for deposits and orders. The same id is used by
+`View registered client` and the admin-only `Delete client` request.
 
 `DELETE /api/clients/{id}` requires an admin JWT and returns 204 (401 without
 authentication, 403 for non-admins, 404 for missing/already deleted clients).
 It logically deletes the customer profile and publishes `client.deleted` so
-Order and Payment remove their local copies. Login accounts and past business
-records are retained; deleted profiles no longer appear in client reads/lists.
+Order and Payment remove their local copies. The account can no longer log in
+or refresh tokens, and existing refresh sessions are revoked. Historical records
+are retained; deleted profiles no longer appear in client reads/lists.
 
 User login now returns `access_token`, `refresh_token`, `token_type`,
 `expires_in` (3600 seconds) and `refresh_expires_in` (seven days on login).
@@ -295,8 +297,9 @@ and `Client / List clients`. Select the
 `Refresh token` replaces both, and `Logout` clears them after revoking the session.
 The client folder inherits Bearer authentication from `accessToken`.
 
-For the saga flow in the root Bruno collection, select `Gateway`, request an
-admin token, run `Client / Create client (admin)` (saves `clientId`), then
+For the saga flow in the root Bruno collection, select `Gateway`, run
+`Client / Register client with login` without authorization, then request a
+token with those credentials. Registration saves `clientId`; next run
 `Payment / Deposit balance` and `Order / Create an order` (saves `orderId`).
 Allow client events to reach the local catalogues before depositing or creating
 the order; retry a catalogue-related 404/409 shortly. Order creation returns 202
@@ -338,7 +341,7 @@ between services still use the Docker network.
 | Delete client (admin only) | DELETE | `/api/clients/{id}` |
 | Get token (HTTP Basic) | POST / GET | `/api/auth/token` |
 | Get public key | GET | `/api/auth/public-key` |
-| Create / list clients | POST / GET | `/api/clients` |
+| List clients | GET | `/api/clients` |
 | Get client | GET | `/api/clients/{id}` |
 | Deposit balance | POST | `/api/payments/{client_id}/deposit` |
 | Get balance | GET | `/api/payments/{client_id}/balance` |
@@ -376,10 +379,10 @@ From Postman or Bruno, use `http://localhost:8080` as the base URL and
 `Content-Type: application/json` on requests with a body. Save the identifiers
 returned by each response:
 
-1. **Create client:** `POST /api/clients`.
+1. **Register client and login account:** public `POST /api/auth/register`.
 
    ```json
-   {"name":"Test client","email":"test@example.org","address":"Calle Mayor 10","postal_code":"01001"}
+   {"username":"test-client","password":"TestPassword123!","name":"Test client","email":"test@example.org","address":"Calle Mayor 10","postal_code":"01001"}
    ```
 
    New clients require an address and a five-digit postal code. Orders receives
@@ -596,7 +599,7 @@ repository instead of being repeated for each service.
 
 ## Order flow
 
-1. Create the client with `POST /clients` in clients.
+1. Register the client with the public `POST /auth/register`, then log in.
 2. Deposit balance with `POST /payment/{client_id}/deposit` in payments.
 3. Create the order with `POST /order`. Orders validates its local client copy,
    calculates the amount and creates the explicit saga. It requests a payment

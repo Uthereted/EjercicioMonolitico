@@ -82,6 +82,11 @@ class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
         profile = await self.client.get('/clients', headers={
             'Authorization': f"Bearer {login.json()['access_token']}"})
         self.assertEqual([c['id'] for c in profile.json()], [registered['id']])
+        self.assertEqual(profile.json()[0], registered)
+        detail = await self.client.get(f"/clients/{registered['id']}", headers={
+            'Authorization': f"Bearer {login.json()['access_token']}"})
+        self.assertEqual(detail.json(), registered)
+        self.assertEqual((await self.client.post('/clients', json=data)).status_code, 405)
         duplicate = await self.client.post('/auth/register', json=data)
         self.assertEqual(duplicate.status_code, 409)
         async with self.sessions() as db:
@@ -113,6 +118,8 @@ class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
         user = (await self.client.post('/auth/token', auth=(data['username'], data['password']))).json()
         user_headers = {'Authorization': f"Bearer {user['access_token']}"}
         self.assertEqual((await self.client.delete(path, headers=user_headers)).status_code, 403)
+        other = await self.client.get('/clients/999999', headers=user_headers)
+        self.assertEqual(other.status_code, 403)
         admin = await self.login()
         headers = {'Authorization': f"Bearer {admin['access_token']}"}
         with patch.object(crud, 'record_event', side_effect=RuntimeError('outbox unavailable')):
@@ -125,6 +132,9 @@ class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get(path, headers=headers)).status_code, 404)
         self.assertEqual((await self.client.delete(path, headers=headers)).status_code, 404)
         self.assertEqual((await self.client.get('/clients', headers=headers)).json(), [])
+        login = await self.client.post('/auth/token', auth=(data['username'], data['password']))
+        self.assertEqual(login.status_code, 401)
+        await self.refresh(user['refresh_token'], expected=401)
         async with self.sessions() as db:
             self.assertTrue((await db.get(models.Client, created['id'])).deleted)
             payload = json.loads(await db.scalar(select(Outbox.payload).where(Outbox.event_type == 'client.deleted')))

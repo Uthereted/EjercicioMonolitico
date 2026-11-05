@@ -84,7 +84,8 @@ def run(all_checks=False):
             return response.json() if response.content else None
 
         def new_order(funds=100, postal_code='01001', pieces=1):
-            customer = request('POST', '/api/clients', expected=201, json={
+            customer = request('POST', '/api/auth/register', expected=201, json={
+                'username': f'client-{uuid.uuid4().hex}', 'password': uuid.uuid4().hex,
                 'name': 'Saga test', 'email': f'saga-{uuid.uuid4().hex}@example.org',
                 'address': 'Calle Mayor 10', 'postal_code': postal_code})
             if funds:
@@ -116,11 +117,13 @@ def run(all_checks=False):
             assert balance(customer) == 100 - order['total_price']
             print(f"PASS delivered: order={order['id']}", flush=True)
 
+        wait_for(lambda: request('GET', '/api/auth/public-key'))
         request('GET', '/api/orders', expected=401)
         request('POST', '/api/auth/token', auth=('admin', 'incorrect'), expected=401)
         token = request('POST', '/api/auth/token', auth=(
             os.getenv('TEST_AUTH_USERNAME', 'admin'), os.getenv('TEST_AUTH_PASSWORD', 'admin123')))
         client.headers['Authorization'] = f"Bearer {token['access_token']}"
+        request('POST', '/api/clients', expected=405, json={})
 
         customer, order = new_order(pieces=2)
         request('POST', f"/api/payments/{customer['id']}/charge", expected=409,
@@ -140,6 +143,7 @@ def run(all_checks=False):
         refreshed = request('POST', '/api/auth/refresh', json={'refresh_token': user['refresh_token']})
         headers = {'Authorization': f"Bearer {refreshed['access_token']}"}
         assert [c['id'] for c in request('GET', '/api/clients', headers=headers)] == [registered['id']]
+        assert request('GET', f"/api/clients/{registered['id']}", headers=headers) == registered
         request('DELETE', f"/api/clients/{registered['id']}", expected=403, headers=headers)
         request('POST', f"/api/payments/{customer['id'] + 1000000}/deposit", expected=403,
                 headers=headers, json={'amount': 10})
@@ -147,6 +151,7 @@ def run(all_checks=False):
         request('POST', '/api/auth/refresh', expected=401, json={'refresh_token': refreshed['refresh_token']})
         request('DELETE', f"/api/clients/{registered['id']}", expected=204)
         request('GET', f"/api/clients/{registered['id']}", expected=404)
+        request('POST', '/api/auth/token', expected=401, auth=(username, password))
         print('PASS authentication and ownership', flush=True)
 
         for funds, postal_code in ((0, '01001'), (100, '28001')):

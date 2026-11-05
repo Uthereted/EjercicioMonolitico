@@ -1,0 +1,18 @@
+meta {
+  name: View registered client
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{gatewayURL}}/api/clients/{{clientId}}
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: eq {{clientId}}
+  res.body.username: isNotEmpty
+  res.body.address: isNotEmpty
+}

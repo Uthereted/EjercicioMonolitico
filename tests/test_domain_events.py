@@ -62,13 +62,14 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
     async def test_client_address_is_published_on_creation_and_periodic_task_only_publishes_key(self):
         from app.sql import crud, schemas
         from pydantic import ValidationError
+        account = {'username': 'client-test', 'password': 'test-password', 'name': 'Test', 'email': 'test@example.org'}
         with self.assertRaises(ValidationError):
-            schemas.ClientCreate(name="Test", email="test@example.org")
+            schemas.ClientRegistration(**account)
         with self.assertRaises(ValidationError):
-            schemas.ClientCreate(name="Test", email="test@example.org", address="Calle Mayor 10", postal_code="1234")
+            schemas.ClientRegistration(**account, address="Calle Mayor 10", postal_code="1234")
         async with database.SessionLocal() as db:
-            client = await crud.create_client(db, schemas.ClientCreate(
-                name="Test", email="test@example.org", address="Calle Mayor 10", postal_code="01001"))
+            client = await crud.register_client(db, schemas.ClientRegistration(
+                **account, address="Calle Mayor 10", postal_code="01001"))
             self.assertEqual(schemas.ClientResponse.model_validate(client).postal_code, "01001")
         with patch.object(messaging.crypto, "get_public_key_pem", return_value="public-key"), \
                 patch.object(messaging.asyncio, "sleep", side_effect=asyncio.CancelledError):

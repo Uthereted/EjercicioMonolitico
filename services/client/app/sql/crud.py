@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import func, select, update
 from app import crypto
 from . import models, schemas
 from app.events import record_event
@@ -49,11 +49,7 @@ async def register_client(db: AsyncSession, registration: schemas.ClientRegistra
         roles=roles
     )
     db.add(db_user)
-    return await create_client(db, schemas.ClientCreate.model_validate(registration.model_dump()))
-
-
-async def create_client(db: AsyncSession, client: schemas.ClientCreate):
-    db_client = models.Client(**client.model_dump())
+    db_client = models.Client(**registration.model_dump(include={'name', 'email', 'address', 'postal_code'}))
     db.add(db_client)
     await db.flush()
     await record_event(db, "client.created", {
@@ -76,12 +72,21 @@ async def get_client_by_email(db: AsyncSession, email: str, *, include_deleted=F
     return await db.scalar(query)
 
 
-async def get_clients(db: AsyncSession):
-    result = await db.execute(select(models.Client).where(models.Client.deleted.is_(False)))
-    return result.scalars().all()
+async def get_client_profiles(db: AsyncSession, *, client_id=None):
+    query = select(models.Client, models.User.username).outerjoin(
+        models.User, models.User.email == models.Client.email).where(models.Client.deleted.is_(False))
+    if client_id is not None:
+        query = query.where(models.Client.id == client_id)
+    rows = (await db.execute(query)).all()
+    return [schemas.ClientResponse(
+        **schemas.ClientResponse.model_validate(client).model_dump(exclude={'username'}), username=username,
+    ) for client, username in rows]
 
 
 async def delete_client(db: AsyncSession, client: models.Client):
     client.deleted = True
+    await db.execute(update(models.RefreshToken).where(models.RefreshToken.user_id.in_(
+        select(models.User.id).where(models.User.email == client.email)
+    )).values(revoked_at=func.now()))
     await record_event(db, "client.deleted", {"client_id": client.id}, f"client.deleted:{client.id}")
     await db.commit()

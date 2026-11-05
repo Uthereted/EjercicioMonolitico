@@ -26,7 +26,9 @@ async def issue_tokens(db, user, *, family_id=None, expires_at=None):
     now = utc_now()
     expires_at = expires_at if expires_at is not None else now + REFRESH_LIFETIME
     refresh_token = secrets.token_urlsafe(48)
-    client = await crud.get_client_by_email(db, user.email)
+    client = await crud.get_client_by_email(db, user.email, include_deleted=True)
+    if client is not None and client.deleted:
+        raise HTTPException(401, "Client account is deleted")
     access_token = crypto.create_jwt_token({
         "sub": str(user.id), "username": user.username, "email": user.email,
         "roles": [role.name for role in user.roles],
