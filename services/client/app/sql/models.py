@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -32,6 +32,7 @@ class Client(Base):
     email = Column(String(256), unique=True, nullable=False)
     address = Column(String(500), nullable=True)
     postal_code = Column(String(5), nullable=True)
+    deleted = Column(Boolean, nullable=False, default=False, server_default="0")
     creation_date = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -1,14 +1,18 @@
 """The payment service decides how to react to an order.created fact."""
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.sqlite import insert
 from .contracts import ClientCreated, OrderCreated
 from .events import record_event
 from .sql import models, crud
 
 
-TOPICS = ('client.created', 'order.created', 'auth.signing-key.published')
+TOPICS = ('client.created', 'client.deleted', 'order.created', 'auth.signing-key.published')
 
 async def handle_event(db, event_type, payload):
+    if event_type == "client.deleted":
+        client = ClientCreated.model_validate(payload)
+        await db.execute(delete(models.KnownClient).where(models.KnownClient.id == client.client_id))
+        return
     if event_type == "client.created":
         client = ClientCreated.model_validate(payload)
         await db.execute(insert(models.KnownClient).values(id=client.client_id).on_conflict_do_nothing())

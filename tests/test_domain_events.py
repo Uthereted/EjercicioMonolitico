@@ -46,6 +46,14 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
         async with database.SessionLocal() as db:
             return list((await db.scalars(select(events.Outbox.event_type).order_by(events.Outbox.id))).all())
 
+    @unittest.skipUnless(SERVICE in ('order', 'payment'), 'client deletion projection')
+    async def test_deleted_client_is_removed_from_local_copy(self):
+        await self.send('client.created', {'client_id': 1, 'address': 'Calle Mayor 10', 'postal_code': '01001'})
+        await self.send('client.deleted', {'client_id': 1})
+        await self.send('client.deleted', {'client_id': 1}, 'retry')
+        async with database.SessionLocal() as db:
+            self.assertIsNone(await db.get(models.KnownClient, 1))
+
     async def send_saga(self, event_type, payload, suffix="1"):
         from app import saga
         await events.dispatch(f"{event_type}:{suffix}", event_type, payload, saga.handle_event)

@@ -132,16 +132,21 @@ def run(all_checks=False):
         request('DELETE', f"/api/orders/{order['id']}", expected=409)
 
         username, password = uuid.uuid4().hex, uuid.uuid4().hex
-        request('POST', '/api/auth/register', expected=201,
-                json={'username': username, 'email': customer['email'], 'password': password})
+        registered = request('POST', '/api/auth/register', expected=201, json={
+            'username': username, 'password': password, 'email': f'{username}@example.org',
+            'name': 'Registered client', 'address': 'Calle Mayor 10', 'postal_code': '01001'})
+        assert registered['address'] == 'Calle Mayor 10' and registered['postal_code'] == '01001', registered
         user = request('POST', '/api/auth/token', auth=(username, password))
         refreshed = request('POST', '/api/auth/refresh', json={'refresh_token': user['refresh_token']})
         headers = {'Authorization': f"Bearer {refreshed['access_token']}"}
-        assert [c['id'] for c in request('GET', '/api/clients', headers=headers)] == [customer['id']]
+        assert [c['id'] for c in request('GET', '/api/clients', headers=headers)] == [registered['id']]
+        request('DELETE', f"/api/clients/{registered['id']}", expected=403, headers=headers)
         request('POST', f"/api/payments/{customer['id'] + 1000000}/deposit", expected=403,
                 headers=headers, json={'amount': 10})
         request('POST', '/api/auth/logout', expected=204, json={'refresh_token': refreshed['refresh_token']})
         request('POST', '/api/auth/refresh', expected=401, json={'refresh_token': refreshed['refresh_token']})
+        request('DELETE', f"/api/clients/{registered['id']}", expected=204)
+        request('GET', f"/api/clients/{registered['id']}", expected=404)
         print('PASS authentication and ownership', flush=True)
 
         for funds, postal_code in ((0, '01001'), (100, '28001')):

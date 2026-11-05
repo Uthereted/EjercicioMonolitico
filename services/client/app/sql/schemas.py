@@ -2,25 +2,6 @@ from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-class RoleSchema(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-
-class UserCreate(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-    roles: List[str] = Field(default_factory=lambda: ["user"])
-
-class UserResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    username: str
-    email: str
-    roles: List[RoleSchema]
-    creation_date: Optional[datetime] = None
-
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -47,3 +28,13 @@ class ClientResponse(ClientBase):
     address: Optional[str] = None
     postal_code: Optional[str] = None
     creation_date: Optional[datetime] = None
+
+
+class ClientRegistration(ClientCreate):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1)
+    roles: List[str] = Field(default_factory=lambda: ["user"])
+
+
+class RegisteredClient(ClientResponse):
+    username: str

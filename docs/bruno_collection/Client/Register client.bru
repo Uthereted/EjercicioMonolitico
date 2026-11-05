@@ -1,0 +1,36 @@
+meta {
+  name: Register client with login
+  type: http
+  seq: 0
+}
+
+post {
+  url: {{gatewayURL}}/api/auth/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "username": "{{authUsername}}",
+    "password": "{{authPassword}}",
+    "name": "Registered client",
+    "email": "{{authUsername}}@example.org",
+    "address": "Calle Mayor 10",
+    "postal_code": "01001"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("clientId", res.getBody().id);
+  }
+}
+
+assert {
+  res.status: eq 201
+  res.body.id: isNumber
+  res.body.username: isNotEmpty
+  res.body.address: isNotEmpty
+  res.body.postal_code: isNotEmpty
+}

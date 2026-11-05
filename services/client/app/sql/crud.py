@@ -33,24 +33,23 @@ async def get_user_by_username(db: AsyncSession, username: str):
     return result.unique().scalar_one_or_none()
 
 
-async def create_user(db: AsyncSession, user_schema: schemas.UserCreate):
+async def register_client(db: AsyncSession, registration: schemas.ClientRegistration):
+    """Create credentials, client profile and its event in one transaction."""
     roles = []
-    for r_name in user_schema.roles:
+    for r_name in registration.roles:
         res = await db.execute(select(models.Role).where(models.Role.name == r_name))
         r_obj = res.scalar_one_or_none()
         if r_obj:
             roles.append(r_obj)
 
     db_user = models.User(
-        username=user_schema.username,
-        email=user_schema.email,
-        password_hash=crypto.hash_password(user_schema.password),
+        username=registration.username,
+        email=registration.email,
+        password_hash=crypto.hash_password(registration.password),
         roles=roles
     )
     db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    return db_user
+    return await create_client(db, schemas.ClientCreate.model_validate(registration.model_dump()))
 
 
 async def create_client(db: AsyncSession, client: schemas.ClientCreate):
@@ -66,13 +65,23 @@ async def create_client(db: AsyncSession, client: schemas.ClientCreate):
 
 
 async def get_client(db: AsyncSession, client_id: int):
-    return await db.get(models.Client, client_id)
+    return await db.scalar(select(models.Client).where(
+        models.Client.id == client_id, models.Client.deleted.is_(False)))
 
 
-async def get_client_by_email(db: AsyncSession, email: str):
-    return await db.scalar(select(models.Client).where(models.Client.email == email))
+async def get_client_by_email(db: AsyncSession, email: str, *, include_deleted=False):
+    query = select(models.Client).where(models.Client.email == email)
+    if not include_deleted:
+        query = query.where(models.Client.deleted.is_(False))
+    return await db.scalar(query)
 
 
 async def get_clients(db: AsyncSession):
-    result = await db.execute(select(models.Client))
+    result = await db.execute(select(models.Client).where(models.Client.deleted.is_(False)))
     return result.scalars().all()
+
+
+async def delete_client(db: AsyncSession, client: models.Client):
+    client.deleted = True
+    await record_event(db, "client.deleted", {"client_id": client.id}, f"client.deleted:{client.id}")
+    await db.commit()

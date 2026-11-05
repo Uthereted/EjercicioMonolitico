@@ -1,5 +1,5 @@
 """React to payment, manufacturing and delivery facts using local state."""
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert
 from .contracts import ClientCreated, PaymentResult, PieceFact, DeliveryFact
 from .events import RetryEvent
@@ -7,9 +7,13 @@ from .sql import models
 from . import workflow
 
 
-TOPICS = ('client.created', 'payment.approved', 'payment.rejected', 'piece.manufacturing.started', 'piece.manufactured', 'delivery.created', 'delivery.ready', 'delivery.delivered', 'auth.signing-key.published')
+TOPICS = ('client.created', 'client.deleted', 'payment.approved', 'payment.rejected', 'piece.manufacturing.started', 'piece.manufactured', 'delivery.created', 'delivery.ready', 'delivery.delivered', 'auth.signing-key.published')
 
 async def handle_event(db, event_type, payload):
+    if event_type == "client.deleted":
+        client = ClientCreated.model_validate(payload)
+        await db.execute(delete(models.KnownClient).where(models.KnownClient.id == client.client_id))
+        return
     if event_type == "client.created":
         client = ClientCreated.model_validate(payload)
         statement = insert(models.KnownClient).values(

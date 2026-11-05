@@ -1,0 +1,15 @@
+meta {
+  name: Delete client (admin only)
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{gatewayURL}}/api/clients/{{clientId}}
+  body: none
+  auth: inherit
+}
+
+assert {
+  res.status: eq 204
+}

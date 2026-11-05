@@ -4,6 +4,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from app.dependencies import get_db
 from app.sql import crud, schemas
 from app import crypto, auth_sessions
@@ -76,15 +77,19 @@ async def login_service(credentials: HTTPBasicCredentials = Depends(security_bas
     }))
 
 
-@router.post("/auth/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED, tags=["Auth"])
-async def register_user(user_data: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
-    """Registra un nuevo usuario."""
-    existing_user = await crud.get_user_by_username(db, user_data.username)
-    if existing_user:
-        raise HTTPException(status_code=400, detail="El usuario ya existe")
-    if user_data.roles != ["user"]:
+@router.post("/auth/register", response_model=schemas.RegisteredClient, status_code=status.HTTP_201_CREATED, tags=["Client"])
+async def register_client(registration: schemas.ClientRegistration, db: AsyncSession = Depends(get_db)):
+    """Register the client and its login account together; id is the client id."""
+    if registration.roles != ["user"]:
         raise HTTPException(status_code=400, detail="El registro público solo permite el rol user")
-    return await crud.create_user(db, user_data)
+    try:
+        client = await crud.register_client(db, registration)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Username or email already exists")
+    return schemas.RegisteredClient(
+        **schemas.ClientResponse.model_validate(client).model_dump(), username=registration.username,
+    )
 
 
 @router.post("/clients", response_model=schemas.ClientResponse, status_code=status.HTTP_201_CREATED, tags=["Client"])
@@ -94,9 +99,21 @@ async def create_client(client: schemas.ClientCreate, db: AsyncSession = Depends
         token_payload.get("service_name") is not None or token_payload.get("email") != str(client.email)
     ):
         raise HTTPException(403, "You can only create your own client")
-    if await crud.get_client_by_email(db, str(client.email)):
+    if await crud.get_client_by_email(db, str(client.email), include_deleted=True):
         raise HTTPException(409, "Client email already exists")
     return await crud.create_client(db, client)
+
+
+@router.delete("/clients/{client_id}", status_code=204, tags=["Client"])
+async def delete_client(client_id: int, db: AsyncSession = Depends(get_db),
+                        token_payload: dict = Depends(verify_jwt)):
+    if not is_admin(token_payload):
+        raise HTTPException(403, "Only administrators can delete clients")
+    client = await crud.get_client(db, client_id)
+    if client is None:
+        raise HTTPException(404, "Client not found")
+    await crud.delete_client(db, client)
+    return Response(status_code=204)
 
 
 @router.get("/clients/{client_id}", response_model=schemas.ClientResponse, tags=["Client"])

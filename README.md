@@ -246,10 +246,30 @@ is not used by the internal choreography.
 
 Users may create a client only for the email in their signed token, read that
 client, and list only their own client. Admins may create and read all clients.
-For self-registration: register, request a token with Basic credentials, create
-your client with Bearer authentication, then request a fresh token to include the
-new `client_id` for orders/payments. Registration and the public-key endpoint stay
-public; obtaining a token always requires valid Basic credentials.
+Self-registration is a single `POST /api/auth/register` with `username`,
+`password`, `name`, `email`, `address` and `postal_code`. It creates the login
+credentials, client profile and `client.created` event in one transaction.
+Its response includes the client `id`, `username`, name, email and address.
+Then log in with Basic credentials: the first token already contains `client_id`
+for orders/payments. A duplicate username/email returns 409. Registration and
+the public-key endpoint stay public; login requires valid credentials.
+
+The database keeps credentials/roles (`users`) separate from delivery details
+(`clients`); they belong to the same client service. `auth` names the login,
+refresh and logout operations, not a third entity or microservice. Existing
+accounts and clients are retained. `POST /api/clients` remains available for
+administrators creating customer records without login credentials.
+
+In Bruno, use a new `authUsername` and set the secret `authPassword`, run
+`Client / Register client with login`, then `Auth / Request token`. The returned
+`clientId` is ready for deposits and orders. `Create client (admin)` is the
+administrative path for customer records without a login account.
+
+`DELETE /api/clients/{id}` requires an admin JWT and returns 204 (401 without
+authentication, 403 for non-admins, 404 for missing/already deleted clients).
+It logically deletes the customer profile and publishes `client.deleted` so
+Order and Payment remove their local copies. Login accounts and past business
+records are retained; deleted profiles no longer appear in client reads/lists.
 
 User login now returns `access_token`, `refresh_token`, `token_type`,
 `expires_in` (3600 seconds) and `refresh_expires_in` (seven days on login).
@@ -276,7 +296,7 @@ and `Client / List clients`. Select the
 The client folder inherits Bearer authentication from `accessToken`.
 
 For the saga flow in the root Bruno collection, select `Gateway`, request an
-admin token, run `Client / Create client` (saves `clientId`), then
+admin token, run `Client / Create client (admin)` (saves `clientId`), then
 `Payment / Deposit balance` and `Order / Create an order` (saves `orderId`).
 Allow client events to reach the local catalogues before depositing or creating
 the order; retry a catalogue-related 404/409 shortly. Order creation returns 202
@@ -314,7 +334,8 @@ between services still use the Docker network.
 | Operation | Method | Gateway route |
 | --- | --- | --- |
 | Gateway status | GET | `/health` |
-| Register user | POST | `/api/auth/register` |
+| Register client and login account | POST | `/api/auth/register` |
+| Delete client (admin only) | DELETE | `/api/clients/{id}` |
 | Get token (HTTP Basic) | POST / GET | `/api/auth/token` |
 | Get public key | GET | `/api/auth/public-key` |
 | Create / list clients | POST / GET | `/api/clients` |

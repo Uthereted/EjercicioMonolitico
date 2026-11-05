@@ -398,6 +398,22 @@
       "destination_type": "queue",
       "routing_key": "delivery.#",
       "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "order.domain",
+      "destination_type": "queue",
+      "routing_key": "client.deleted",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "payment.domain",
+      "destination_type": "queue",
+      "routing_key": "client.deleted",
+      "arguments": {}
     }
   ]
 }
