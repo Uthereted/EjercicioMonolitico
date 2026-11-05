@@ -1,19 +1,17 @@
 """The payment service decides how to react to an order.created fact."""
 from sqlalchemy import select, update
 from sqlalchemy.dialects.sqlite import insert
-from .contracts import ClientCreated, ClientCatalogue, OrderCreated
+from .contracts import ClientCreated, OrderCreated
 from .events import record_event
 from .sql import models, crud
 
 
-TOPICS = ('client.created', 'clients.catalogue.published', 'order.created', 'auth.signing-key.published')
+TOPICS = ('client.created', 'order.created', 'auth.signing-key.published')
 
 async def handle_event(db, event_type, payload):
-    if event_type in ("client.created", "clients.catalogue.published"):
-        ids = ([ClientCreated.model_validate(payload).client_id] if event_type == "client.created"
-               else ClientCatalogue.model_validate(payload).client_ids)
-        for client_id in ids:
-            await db.execute(insert(models.KnownClient).values(id=client_id).on_conflict_do_nothing())
+    if event_type == "client.created":
+        client = ClientCreated.model_validate(payload)
+        await db.execute(insert(models.KnownClient).values(id=client.client_id).on_conflict_do_nothing())
         return
     if event_type != "order.created":
         raise ValueError("Unsupported payment fact")

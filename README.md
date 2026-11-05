@@ -81,8 +81,8 @@ and `tools/build_chassis.py` to regenerate the distribution after chassis change
 `manufacturing_audit.business_events`. It records `client.#`, `order.#`,
 `payment.#`, `piece.#` and `delivery.#` facts, plus `saga.#` commands and responses
 from `manufacturing.commands` and `manufacturing.saga.responses`, with event identifier, producer,
-payload and UTC receipt time. Authentication/key publication and periodic client
-catalogue snapshots are not subscribed to this audit queue.
+payload and UTC receipt time. Authentication/key publication is not subscribed
+to this audit queue.
 
 MongoDB keeps its data on the `audit_data` volume and has no published host port.
 The consumer acknowledges a message only after an acknowledged journaled write.
@@ -231,7 +231,11 @@ public key received through signing-key publication events.
 
 Newly created clients become visible in the other services asynchronously.
 A request that arrives before its catalogue update may return 404; retry shortly.
-Periodic client/public-key snapshots also bootstrap new or recovered databases.
+Client data is distributed only through `client.created`, including its address
+and postal code. There is no periodic client catalogue publication. This setup
+assumes the services start with empty databases together; clearing one consumer's
+client data later does not rebuild old clients automatically. Public signing-key
+publication remains periodic so JWT verification can bootstrap independently.
 The optional service-token HTTP API is retained for external compatibility but
 is not used by the internal choreography.
 
@@ -354,7 +358,7 @@ returned by each response:
    ```
 
    New clients require an address and a five-digit postal code. Orders receives
-   them through client events and periodic catalogue snapshots. Order creation
+   them through `client.created` events. Order creation
    can omit `address` to use this local copy (409 until the address arrives).
    Existing clients are retained with empty address fields; their orders can
    still supply an explicit address including the postal code. Delivery coverage
@@ -453,7 +457,7 @@ still enter through HAProxy.
 | --- | --- |
 | `manufacturing.commands` | Order saga commands to `payment.saga` and `delivery.saga` |
 | `manufacturing.saga.responses` | Payment/delivery replies to the coordinator in `order.saga` |
-| `manufacturing.events` | Business facts, client catalogues and signing keys for domain subscribers |
+| `manufacturing.events` | Business facts, client creation and signing keys for domain subscribers |
 
 The existing outbox/inbox handles all three channels. Order publishes saga
 commands; payment and delivery publish saga responses. Business facts remain
@@ -461,7 +465,7 @@ on the event exchange. No synchronous calls between services are needed.
 
 | Fact | Publisher | Subscribers and local reaction |
 | --- | --- | --- |
-| `client.created` / `clients.catalogue.published` | Client | Order/payment update their local client catalogues |
+| `client.created` | Client | Order/payment store the new client in their local copies |
 | `auth.signing-key.published` | Client | JWT consumers persist the RSA public key |
 | `order.created` | Order (legacy flow) | Payment decides and records the payment outcome |
 | `payment.approved` / `payment.rejected` | Payment (legacy flow) | Order records the outcome |

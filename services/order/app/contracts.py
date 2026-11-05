@@ -11,11 +11,6 @@ class ClientCreated(BaseModel):
     postal_code: str | None = Field(default=None, pattern=r"^[0-9]{5}$")
 
 
-class ClientCatalogue(BaseModel):
-    client_ids: list[PositiveID]
-    clients: list[ClientCreated] = Field(default_factory=list)
-
-
 class OrderCreated(BaseModel):
     order_id: PositiveID
     client_id: PositiveID

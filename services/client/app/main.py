@@ -10,7 +10,7 @@ from app import crypto, messaging, events
 async def lifespan(app: FastAPI):
     await database.initialize()
     crypto.generate_rsa_keys()
-    tasks = [asyncio.create_task(messaging.publish_catalogue()),
+    tasks = [asyncio.create_task(messaging.publish_signing_key()),
              asyncio.create_task(events.publish_pending_events())]
     try:
         yield

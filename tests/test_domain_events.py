@@ -210,7 +210,7 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sources, [expected_in])
 
     @unittest.skipUnless(SERVICE == "client", "client address publication")
-    async def test_client_address_is_required_persisted_and_published_in_snapshot(self):
+    async def test_client_address_is_published_on_creation_and_periodic_task_only_publishes_key(self):
         from app.sql import crud, schemas
         from pydantic import ValidationError
         with self.assertRaises(ValidationError):
@@ -224,14 +224,15 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(messaging.crypto, "get_public_key_pem", return_value="public-key"), \
                 patch.object(messaging.asyncio, "sleep", side_effect=asyncio.CancelledError):
             with self.assertRaises(asyncio.CancelledError):
-                await messaging.publish_catalogue()
+                await messaging.publish_signing_key()
         async with database.SessionLocal() as db:
             created = json.loads(await db.scalar(select(events.Outbox.payload).where(
                 events.Outbox.event_type == "client.created")))
-            snapshot = json.loads(await db.scalar(select(events.Outbox.payload).where(
-                events.Outbox.event_type == "clients.catalogue.published")))
             self.assertEqual(created, {"client_id": client.id, "address": "Calle Mayor 10", "postal_code": "01001"})
-            self.assertEqual(snapshot, {"client_ids": [client.id], "clients": [created]})
+            key = json.loads(await db.scalar(select(events.Outbox.payload).where(
+                events.Outbox.event_type == "auth.signing-key.published")))
+            self.assertEqual(key, {"public_key": "public-key"})
+        self.assertEqual(await self.facts(), ["client.created", "auth.signing-key.published"])
 
     @unittest.skipUnless(SERVICE == "client", "existing client database")
     async def test_client_address_migration_preserves_legacy_clients(self):
@@ -250,14 +251,14 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(client.postal_code)
 
     @unittest.skipUnless(SERVICE == "order", "client address projection")
-    async def test_order_uses_client_address_from_snapshot_without_http(self):
+    async def test_order_uses_client_address_from_creation_event_without_http(self):
         from app.routers import main_router
         from app.sql import schemas
         from fastapi import HTTPException
-        await self.send("clients.catalogue.published", {
-            "client_ids": [1], "clients": [{"client_id": 1, "address": "Calle Mayor 10", "postal_code": "01001"}]})
+        await self.send("client.created", {
+            "client_id": 1, "address": "Calle Mayor 10", "postal_code": "01001"})
         await self.send("client.created", {"client_id": 1}, "legacy")
-        await self.send("clients.catalogue.published", {"client_ids": [1, 2]}, "legacy")
+        await self.send("client.created", {"client_id": 2}, "second")
         async with database.SessionLocal() as db:
             known = await db.get(models.KnownClient, 1)
             self.assertEqual(known.postal_code, "01001")

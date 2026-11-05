@@ -1,25 +1,16 @@
-"""Publish durable client facts and periodic public snapshots."""
+"""Publish the public signing key so JWT consumers can bootstrap and recover."""
 import asyncio
 import hashlib
 from uuid import uuid4
-from sqlalchemy import select
 from . import crypto
 from .events import record_event
-from .sql import database, models
+from .sql import database
 
 
-async def publish_catalogue():
-    # Snapshots bootstrap new local projections without request/reply.
+async def publish_signing_key():
     while True:
         async with database.SessionLocal() as db:
-            clients = list((await db.scalars(select(models.Client))).all())
             epoch = uuid4().hex
-            await record_event(db, "clients.catalogue.published", {
-                "client_ids": [client.id for client in clients],
-                "clients": [{"client_id": client.id, "address": client.address,
-                             "postal_code": client.postal_code} for client in clients],
-            },
-                               f"clients.catalogue.published:{epoch}")
             pem = crypto.get_public_key_pem()
             fingerprint = hashlib.sha256(pem.encode()).hexdigest()
             await record_event(db, "auth.signing-key.published", {"public_key": pem},

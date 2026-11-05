@@ -1,29 +1,23 @@
 """React to payment, manufacturing and delivery facts using local state."""
 from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert
-from .contracts import ClientCreated, ClientCatalogue, PaymentResult, PieceFact, DeliveryFact
+from .contracts import ClientCreated, PaymentResult, PieceFact, DeliveryFact
 from .events import RetryEvent
 from .sql import models
 from . import workflow
 
 
-TOPICS = ('client.created', 'clients.catalogue.published', 'payment.approved', 'payment.rejected', 'piece.manufacturing.started', 'piece.manufactured', 'delivery.created', 'delivery.ready', 'delivery.delivered', 'auth.signing-key.published')
+TOPICS = ('client.created', 'payment.approved', 'payment.rejected', 'piece.manufacturing.started', 'piece.manufactured', 'delivery.created', 'delivery.ready', 'delivery.delivered', 'auth.signing-key.published')
 
 async def handle_event(db, event_type, payload):
-    if event_type in ("client.created", "clients.catalogue.published"):
-        ids = ([ClientCreated.model_validate(payload).client_id] if event_type == "client.created"
-               else ClientCatalogue.model_validate(payload).client_ids)
-        for client_id in ids:
-            await db.execute(insert(models.KnownClient).values(id=client_id).on_conflict_do_nothing())
-        clients = ([ClientCreated.model_validate(payload)] if event_type == "client.created"
-                   else ClientCatalogue.model_validate(payload).clients)
-        for client in clients:
-            statement = insert(models.KnownClient).values(
-                id=client.client_id, address=client.address, postal_code=client.postal_code)
-            await db.execute(statement.on_conflict_do_update(index_elements=["id"], set_={
-                "address": func.coalesce(statement.excluded.address, models.KnownClient.address),
-                "postal_code": func.coalesce(statement.excluded.postal_code, models.KnownClient.postal_code),
-            }))
+    if event_type == "client.created":
+        client = ClientCreated.model_validate(payload)
+        statement = insert(models.KnownClient).values(
+            id=client.client_id, address=client.address, postal_code=client.postal_code)
+        await db.execute(statement.on_conflict_do_update(index_elements=["id"], set_={
+            "address": func.coalesce(statement.excluded.address, models.KnownClient.address),
+            "postal_code": func.coalesce(statement.excluded.postal_code, models.KnownClient.postal_code),
+        }))
         return
     if event_type in ("payment.approved", "payment.rejected"):
         fact = PaymentResult.model_validate(payload)

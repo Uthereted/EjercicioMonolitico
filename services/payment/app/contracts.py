@@ -9,10 +9,6 @@ class ClientCreated(BaseModel):
     client_id: PositiveID
 
 
-class ClientCatalogue(BaseModel):
-    client_ids: list[PositiveID]
-
-
 class OrderCreated(BaseModel):
     order_id: PositiveID
     client_id: PositiveID
