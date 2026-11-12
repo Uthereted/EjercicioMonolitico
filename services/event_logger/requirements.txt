@@ -1,2 +1,4 @@
 microservice_chassis[events]==0.5.0
 pymongo~=4.10
+fastapi~=0.114
+uvicorn~=0.30

@@ -2,8 +2,10 @@
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 
+from fastapi import FastAPI, HTTPException
 from pymongo import MongoClient
 from pymongo.write_concern import WriteConcern
 from my_chassis import configure_logging
@@ -79,5 +81,28 @@ async def run():
         mongo.close()
 
 
+@asynccontextmanager
+async def lifespan(app):
+    app.state.worker = asyncio.create_task(run())
+    try:
+        yield
+    finally:
+        app.state.worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await app.state.worker
+
+
+app = FastAPI(title="Event Logger Health", lifespan=lifespan,
+              docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.get('/service/health')
+async def health():
+    if app.state.worker.done():
+        raise HTTPException(status_code=503, detail='Audit worker stopped')
+    return {'status': 'ok', 'service': 'event-logger'}
+
+
 if __name__ == '__main__':
-    asyncio.run(run())
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8000)

@@ -355,8 +355,12 @@ JSON bodies and statuses are the same as in the services' own APIs.
 For example, a delivery is completed with `{"status":"Delivered"}`.
 Only the gateway routes listed above are exposed; legacy aliases were removed.
 Unknown routes return 404. `/health` confirms that the gateway is up;
-the availability of each service is checked through its requests and through
-the HAProxy statistics at http://localhost:8404 (user and password `admin`).
+HAProxy checks every service with `GET /service/health`, expecting HTTP 200.
+Checks run every two seconds: three failures mark a server DOWN and two successes
+restore it to UP. The event logger is monitored through an internal-only backend.
+See the HAProxy statistics at http://localhost:8404 (user and password `admin`).
+These endpoints check process liveness, without probing RabbitMQ or the databases.
+See [manual health check steps](Documentation.md#manual-health-checks-powershell).
 The Swagger documentation remains on the individual ports in the table.
 
 ### Testing the flow manually

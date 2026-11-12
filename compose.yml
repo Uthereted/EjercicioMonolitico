@@ -158,6 +158,7 @@ services:
       - client_service
       - paymentservice
       - machineservice
+      - event-logger
     restart: on-failure
 
 volumes:

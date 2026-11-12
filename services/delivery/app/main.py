@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
+from my_chassis import create_health_router
 from .routers import delivery_router
 from .sql import database
 from . import messaging, events, saga
@@ -26,4 +27,5 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Delivery microservice", version="1.0.0", lifespan=lifespan)
+app.include_router(create_health_router("delivery-service"), prefix="/service")
 app.include_router(delivery_router.router)

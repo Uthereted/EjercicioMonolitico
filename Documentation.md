@@ -36,7 +36,7 @@ Each service lives in `services/<name>/`, has its own Dockerfile and is the sole
 
 **Deliveries** (`delivery`, port 13004) manages deliveries in `delivery.db`. It creates a pending delivery when it sees `order.paid`, marks it `Ready` on `order.manufactured`, and publishes `delivery.created`, `delivery.ready` and `delivery.delivered`.
 
-**Event logger** (`event-logger`) is an independent worker with no HTTP API. It consumes the `audit.domain` queue and stores every business fact in MongoDB (`manufacturing_audit.business_events`). MongoDB has no published host port.
+**Event logger** (`event-logger`) is an independent worker with an internal HTTP health endpoint on port 8000. It consumes the `audit.domain` queue and stores every business fact in MongoDB (`manufacturing_audit.business_events`). Neither its health port nor MongoDB has a published host port.
 
 ## Authentication
 
@@ -73,7 +73,7 @@ The chassis is the `microservice_chassis` 0.5.0 library, imported in Python as `
 | `my_chassis.messaging.TopicTransport` | Broker connection, the topic exchange and the subscription of a service's own queue to its topics | Services and event logger |
 | `my_chassis.database` | `create_database` (engine and session factory) and the per-request session dependency | All five service SQLite databases (MongoDB uses its own client) |
 | `configure_logging` | Common log format that includes the service name | Orders, payments and event logger |
-| `create_health_router` | `GET /health` endpoint | Orders and payments |
+| `create_health_router` | `GET /service/health` using the `/service` router prefix | All five APIs; orders and payments also retain `/health` |
 
 Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
 
@@ -89,7 +89,38 @@ For local development, install the wheel from the repository root:
 python -m pip install "vendor/microservice_chassis-0.5.0-py3-none-any.whl[auth,events,database]"
 ```
 
-**Health check scope.** `/health` only shows that the process answers HTTP; it does not check the database or RabbitMQ. It is available on orders (`:13001/health`) and payments (`:13006/health`).
+**Health check scope.** All six application services expose unauthenticated `GET /service/health`, returning HTTP 200 and `{"status":"ok","service":"<service-name>"}`. This is a liveness check: it does not check the database or RabbitMQ. The event logger returns 503 if its audit task has stopped. Orders and payments retain their previous `/health` endpoints, and delivery retains `/deliveries/`.
+
+HAProxy sends `GET /service/health` directly to each container on port 8000 and expects exactly HTTP 200. Checks run every two seconds; three consecutive failures mark a server DOWN, and two successful checks restore it to UP. The event logger has a monitoring-only backend with no public gateway route. The gateway's own `/health` only checks the gateway.
+
+### Manual health checks (PowerShell)
+
+Rebuild and start the services from the repository root (requires Docker Desktop and the project's `.env`):
+
+```powershell
+docker compose up -d --build
+foreach ($port in 13001, 13006, 13004, 13005, 13002) {
+    Invoke-RestMethod "http://localhost:$port/service/health"
+}
+docker compose exec event-logger python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/service/health').read().decode())"
+```
+
+Each request should return `status: ok` and its service name without a token. Open HAProxy statistics at `http://localhost:8404` (credentials `admin` / `admin`) and confirm all six backends are UP with HTTP checks reporting 200.
+
+To observe failure detection, stop orders and allow at least six seconds for checks:
+
+```powershell
+docker compose stop order-service
+Invoke-WebRequest http://localhost:8080/api/orders
+```
+
+The order server should show DOWN and the gateway should return 503 (PowerShell reports an HTTP error). Other backends should remain UP. Restore orders:
+
+```powershell
+docker compose start order-service
+```
+
+After application startup and two successful checks, orders should show UP again. `http://localhost:8080/health` continues to return 200 throughout because it reports gateway liveness independently.
 
 ## RabbitMQ: queues and event contracts
 

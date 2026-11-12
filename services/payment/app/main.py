@@ -30,4 +30,5 @@ async def lifespan(app):
 
 app = FastAPI(title="Payment Service", docs_url="/payment", redoc_url=None, lifespan=lifespan)
 app.include_router(create_health_router("payment-service"))
+app.include_router(create_health_router("payment-service"), prefix="/service")
 app.include_router(payment_router.router)
