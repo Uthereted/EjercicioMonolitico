@@ -5,6 +5,7 @@ import os
 from contextlib import suppress
 from random import randint
 from sqlalchemy import select
+from service_logging import runtime
 from .events import record_event
 from .sql import database
 from .sql.models import WorkPiece
@@ -32,6 +33,7 @@ class Machine:
                 await task
 
     async def manufacture_one(self):
+        await runtime.wait_available()
         async with database.SessionLocal() as db:
             piece = await db.scalar(select(WorkPiece).where(
                 WorkPiece.status.in_(["Queued", "Manufacturing"])).order_by(WorkPiece.id).limit(1))
@@ -47,6 +49,7 @@ class Machine:
             await db.commit()
         # Cancellation leaves durable work in Manufacturing; startup resumes it.
         await asyncio.sleep(float(os.getenv("MANUFACTURING_SECONDS", str(randint(5, 20)))))
+        await runtime.wait_available('Completing manufactured piece')
         async with database.SessionLocal() as db:
             piece = await db.get(WorkPiece, piece_id)
             piece.status = "Manufactured"

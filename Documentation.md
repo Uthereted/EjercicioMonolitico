@@ -8,7 +8,7 @@ This document describes the resulting architecture, authentication, the chassis,
 
 ## Architecture overview
 
-The system runs as nine containers: the HAProxy gateway, RabbitMQ, the five microservices, the event logger and MongoDB. All external requests enter through HAProxy, which routes them by path prefix. Between services there is **no HTTP traffic at all**: no request/reply, no RPC and no peer service URLs. Each service depends only on the broker and on its own database, so a service that is down never blocks a request to another one; it simply catches up from its durable queue when it comes back.
+The system runs as ten containers: the HAProxy gateway, RabbitMQ, the five business microservices, the event logger, the log aggregator and MongoDB. Business data travels through RabbitMQ, without HTTP calls between business services. All six log producers also check the aggregator's internal HTTP health endpoint before operations. If application logging becomes unavailable, new HTTP operations return 503 and background business operations pause until recovery. The event logger and application log aggregator have separate queues and MongoDB collections.
 
 | Container | Role | Storage |
 | --- | --- | --- |
@@ -20,6 +20,7 @@ The system runs as nine containers: the HAProxy gateway, RabbitMQ, the five micr
 | `machineservice` | Piece manufacturing | `machine.db` |
 | `delivery` | Deliveries | `delivery.db` |
 | `event-logger` | Business-event audit worker | Writes to MongoDB |
+| `log-aggregator` | Application log consumer and admin REST API | MongoDB `application_logs` |
 | `mongodb` | Audit store | `manufacturing_audit` database |
 
 ## Microservices
@@ -72,7 +73,7 @@ The chassis is the `microservice_chassis` 0.5.0 library, imported in Python as `
 | `my_chassis.events.EventBus` | `event_outbox`, `event_inbox` and signing-key tables bound to the service's own database; atomic recording of facts; confirmed publishing with retries; one-time processing of received facts | The five services |
 | `my_chassis.messaging.TopicTransport` | Broker connection, the topic exchange and the subscription of a service's own queue to its topics | Services and event logger |
 | `my_chassis.database` | `create_database` (engine and session factory) and the per-request session dependency | All five service SQLite databases (MongoDB uses its own client) |
-| `configure_logging` | Common log format that includes the service name | Orders, payments and event logger |
+| `service_logging.install_logging` (local shared package) | RabbitMQ application logging and fail-closed operation gates | All six log producers |
 | `create_health_router` | `GET /service/health` using the `/service` router prefix | All five APIs; orders and payments also retain `/health` |
 
 Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
@@ -89,7 +90,7 @@ For local development, install the wheel from the repository root:
 python -m pip install "vendor/microservice_chassis-0.5.0-py3-none-any.whl[auth,events,database]"
 ```
 
-**Health check scope.** All six application services expose unauthenticated `GET /service/health`, returning HTTP 200 and `{"status":"ok","service":"<service-name>"}`. This is a liveness check: it does not check the database or RabbitMQ. The event logger returns 503 if its audit task has stopped. Orders and payments retain their previous `/health` endpoints, and delivery retains `/deliveries/`.
+**Health check scope.** All seven application services expose unauthenticated `GET /service/health`, returning HTTP 200 and `{"status":"ok","service":"<service-name>"}` when available. Producers return 503 if the logging pipeline is unavailable; their health handlers read cached state without doing I/O. The aggregator monitors RabbitMQ connectivity and MongoDB read/write availability in the background. The event logger also returns 503 if its audit task has stopped. Orders and payments retain their previous `/health` endpoints, and delivery retains `/deliveries/`. The gateway `/health` continues to report only gateway liveness.
 
 HAProxy sends `GET /service/health` directly to each container on port 8000 and expects exactly HTTP 200. All backends inherit the circuit breaker settings in `default-server`, following the example on page 13 of the course's Reliability and Observability slides:
 
@@ -109,13 +110,13 @@ Rebuild and start the services from the repository root (requires Docker Desktop
 
 ```powershell
 docker compose up -d --build
-foreach ($port in 13001, 13006, 13004, 13005, 13002) {
+foreach ($port in 13001, 13006, 13004, 13005, 13002, 13007) {
     Invoke-RestMethod "http://localhost:$port/service/health"
 }
 docker compose exec event-logger python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/service/health').read().decode())"
 ```
 
-Each request should return `status: ok` and its service name without a token. Open HAProxy statistics at `http://localhost:8404` (credentials `admin` / `admin`) and confirm all six backends are UP with HTTP checks reporting 200.
+Each request should return `status: ok` and its service name without a token. Open HAProxy statistics at `http://localhost:8404` (credentials `admin` / `admin`) and confirm all seven backends are UP with HTTP checks reporting 200.
 
 To observe failure detection, stop orders and allow around ten seconds for checks:
 
@@ -136,7 +137,9 @@ If only `haproxy/haproxy.cfg` has changed, apply the configuration with `docker 
 
 ## RabbitMQ: queues and event contracts
 
-All internal communication goes through a single durable **topic** exchange, `manufacturing.events`. Publishers record facts about their own state; subscribers decide on their own what to do with them. There are no command queues, RPC operations or reply queues.
+Domain facts use the durable **topic** exchange `manufacturing.events`. Saga commands and responses use `manufacturing.commands` and `manufacturing.saga.responses`. Application logging uses the new, separate `manufacturing.logs` exchange. No application log is published to the domain or saga exchanges. The aggregator subscribes to public-key events only for local JWT verification; those are stored separately from logs.
+
+See [Log aggregation and manual checks](docs/log-aggregation.md) for log fields, the REST API, failure handling and manual verification steps.
 
 ![Messaging topology](docs/project_messaging.png)
 
@@ -224,6 +227,8 @@ On Windows PowerShell, use `Copy-Item dot_env_example .env` instead of `cp`. The
 | API Gateway over HTTP | `http://localhost:8080/api/...` |
 | API Gateway over HTTPS (local development certificate) | `https://localhost:8443/api/...` |
 | HAProxy statistics | `http://localhost:8404` (admin / admin) |
+| Application logs (admin JWT) | `http://localhost:8080/api/logs` |
+| Log aggregator Swagger (local) | `http://localhost:13007/docs` |
 | RabbitMQ console | `http://localhost:15672` (manufacturing / manufacturing) |
 | Swagger for each service | `:13001/docs`, `:13002/docs`, `:13004/docs`, `:13005/client`, `:13006/payment` |
 

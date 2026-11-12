@@ -7,13 +7,14 @@ import tempfile
 import unittest
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'services/client'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ['SQLALCHEMY_DATABASE_URL'] = 'sqlite+aiosqlite:///:memory:'
 from app.main import app
 from app import auth_sessions
@@ -24,6 +25,9 @@ from app.sql import database, models, crud
 
 class RefreshTokenTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        gate = patch('service_logging.runtime.checkpoint', new_callable=AsyncMock)
+        gate.start()
+        self.addCleanup(gate.stop)
         self.temp = tempfile.TemporaryDirectory()
         db_path = Path(self.temp.name) / 'refresh.db'
         self.engine = create_async_engine(f'sqlite+aiosqlite:///{db_path.as_posix()}')

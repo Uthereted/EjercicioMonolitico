@@ -6,7 +6,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--service', choices=('order', 'payment', 'delivery', 'machine', 'client'), default='order')
@@ -15,6 +15,7 @@ SERVICE = options.service
 sys.argv = [sys.argv[0], *remaining]
 os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / SERVICE))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import select, func
 from sqlalchemy.dialects.sqlite import insert
 from app import events, messaging
@@ -24,6 +25,10 @@ PAID = {"order_id": 1, "client_id": 1, "amount": 20, "address": "Madrid", "piece
 
 class DomainEventTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # These unit tests exercise domain transactions without live log infrastructure.
+        gate = patch('service_logging.runtime.wait_available', new_callable=AsyncMock)
+        gate.start()
+        self.addCleanup(gate.stop)
         async with database.engine.begin() as conn:
             await conn.run_sync(database.Base.metadata.drop_all)
         await database.initialize()

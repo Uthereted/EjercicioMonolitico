@@ -1,6 +1,7 @@
 """Bind shared infrastructure to this service's own database and configuration."""
 import os
-from my_chassis.events import EventBus, RetryEvent
+from my_chassis.events import RetryEvent
+from service_logging import LoggedEventBus as EventBus
 from my_chassis.messaging import TopicTransport
 from .sql import database
 

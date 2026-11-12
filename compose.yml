@@ -140,6 +140,23 @@ services:
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
+  log-aggregator:
+    build:
+      context: .
+      dockerfile: services/log_aggregator/Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:13007:8000'
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017
+      LOG_DATABASE: manufacturing_audit
+      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+    restart: on-failure
+
   haproxy:
     image: haproxy:latest
     ports:
@@ -159,6 +176,7 @@ services:
       - paymentservice
       - machineservice
       - event-logger
+      - log-aggregator
     restart: on-failure
 
 volumes:

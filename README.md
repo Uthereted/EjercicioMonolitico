@@ -1,7 +1,8 @@
 # Manufacturing Microservices
 
 The project has five FastAPI microservices (orders, machines, deliveries, clients
-and payments), plus an independent MongoDB business-event audit worker. Each service has its own code, container,
+and payments), plus a MongoDB business-event audit worker and a separate application
+log aggregator. Each service has its own code, container,
 Dockerfile and `requirements.txt`.
 
 ## Quick start
@@ -27,6 +28,8 @@ services/
   order/          # Orders and pieces
   payment/        # Payments
   event_logger/   # MongoDB audit worker
+  log_aggregator/ # Application logs and admin REST API (MongoDB)
+service_logging/  # RabbitMQ logging handler and operation gates for all six producers
 haproxy/          # Gateway configuration
 compose.yml       # Run everything together
 dot_env_example   # Example environment variables
@@ -82,6 +85,9 @@ and `tools/build_chassis.py` to regenerate the distribution after chassis change
 
 ## Dedicated business event audit
 
+Application logs use a different service, exchange and collection. See
+[Log aggregation](docs/log-aggregation.md) for architecture and manual checks.
+
 `event-logger` consumes `audit.domain` independently and stores facts in MongoDB:
 `manufacturing_audit.business_events`. It records `client.#`, `order.#`,
 `payment.#`, `piece.#` and `delivery.#` facts, plus `saga.#` commands and responses
@@ -92,14 +98,14 @@ to this audit queue.
 MongoDB keeps its data on the `audit_data` volume and has no published host port.
 The consumer acknowledges a message only after an acknowledged journaled write.
 An upsert keyed by `_id = event_id` keeps redeliveries from duplicating records.
-Business services do not depend on the logger or MongoDB: the durable audit queue
-retains their facts while the recorder is offline. It archives facts from the
+The durable audit queue retains facts while the event recorder is offline.
+Application operations do depend on the separate log aggregator and its MongoDB
+storage: they pause when application logging is unavailable. It archives facts from the
 activation of its subscription; old already-consumed events are not backfilled.
 
 Inspect recent recorded events (open MongoDB first to avoid PowerShell quote handling):
 
 ```powershell
-docker compose logs --tail=30 event-logger
 docker compose exec mongodb mongosh
 ```
 
@@ -229,8 +235,9 @@ Machine and delivery validate RS256, issuer `manufacturing-client`, audience
 tokens return 401; an unavailable signing key returns 503. They refresh cached
 keys after a signature failure and on persisted `auth.signing-key.published` facts.
 
-Internal services now exchange domain facts only. There is no HTTP/RPC
-request/reply between services. Orders and payments validate clients using local
+Business data is exchanged through RabbitMQ, without business HTTP/RPC
+request/reply. Producers also check the log aggregator's internal HTTP health
+endpoint before operations. Orders and payments validate clients using local
 catalogues maintained by client events. Each JWT consumer keeps a persistent
 public key received through signing-key publication events.
 
@@ -347,6 +354,7 @@ between services still use the Docker network.
 | Get order | GET | `/api/orders/{id}` |
 | Get order pieces | GET | `/api/orders/{id}/pieces` |
 | Get machine status | GET | `/api/machine/status` |
+| Query application logs (admin) | GET | `/api/logs` |
 | List deliveries | GET | `/api/deliveries` |
 | Get delivery | GET | `/api/deliveries/{id}` |
 | Update delivery | PATCH | `/api/deliveries/{id}/status` |
@@ -364,7 +372,9 @@ HAProxy stops routing requests to DOWN servers and returns HTTP 503 when the
 requested backend has no available server. The event logger is monitored
 through an internal-only backend.
 See the HAProxy statistics at http://localhost:8404 (user and password `admin`).
-These endpoints check process liveness, without probing RabbitMQ or the databases.
+The six producers return 503 when their logging pipeline is unavailable. The
+aggregator monitors RabbitMQ and MongoDB in the background; its health endpoint
+reports that cached state. Business-service databases are not probed by health requests.
 See [manual health check steps](Documentation.md#manual-health-checks-powershell).
 The Swagger documentation remains on the individual ports in the table.
 
@@ -565,7 +575,7 @@ docker compose ps
 Invoke-RestMethod http://localhost:8080/health
 ```
 
-Comprueba que los nueve contenedores están en ejecución. El endpoint `/health`
+Comprueba que los diez contenedores están en ejecución. El endpoint `/health`
 comprueba el gateway; las siguientes pruebas verifican los servicios.
 Usa el entorno Python existente del proyecto, sin necesidad de activarlo:
 
@@ -587,7 +597,9 @@ PASS compensated: order=16, balance=0
 El número del pedido varía. Las pruebas conservan los registros creados.
 Consulta sus eventos siguiendo [Dedicated business event audit](#dedicated-business-event-audit)
 y sustituyendo `15` por el número que muestre tu prueba.
-Si falla algún paso, ejecuta `docker compose logs --tail=100`.
+Si falla algún paso, consulta los mensajes de aplicación mediante `/api/logs`.
+Si el agregador está caído, recupera RabbitMQ, MongoDB y `log-aggregator` antes
+de consultar los mensajes pendientes.
 Para detener el programa conservando los datos, ejecuta `docker compose down`.
 
 To include recovery and auditing, run the same script with `--all`:
@@ -684,7 +696,9 @@ section.
   services depend on RabbitMQ; wait for its healthcheck to pass or run
   `docker compose ps`.
 - **The gateway returns 502/503 right after startup:** the backends may not be
-  ready yet. Wait a few seconds or run `docker compose restart haproxy`.
+  ready yet. Check `http://localhost:13007/service/health` and restore RabbitMQ,
+  MongoDB or `log-aggregator` if needed. Operations resume automatically when
+  application logging is available, followed by HAProxy's recovery checks.
 - **401 on orders or payments:** the JWT is missing or expired, or clients was
   restarted (this regenerates the signing key). Request a new token at
   `/api/auth/token`.

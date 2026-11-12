@@ -1,0 +1,6 @@
+fastapi~=0.114
+uvicorn~=0.30
+aio-pika~=9.4
+pymongo~=4.10
+PyJWT[crypto]~=2.9
+microservice_chassis[auth,events]==0.5.0

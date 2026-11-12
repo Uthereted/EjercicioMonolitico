@@ -1,18 +1,17 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
-from my_chassis import configure_logging, create_health_router
+from my_chassis import create_health_router
+from service_logging import install_logging, runtime
 from app import messaging, workflow, events, saga
 from app.routers import main_router
 from app.sql import database
 from app.auth_verifier import fetch_public_key
 
-configure_logging("order-service")
-
-
 @asynccontextmanager
 async def lifespan(app):
     await database.initialize()
+    await runtime.wait_available('Restoring order workflow')
     await workflow.bootstrap()
     await fetch_public_key()
     tasks = [asyncio.create_task(events.publish_pending_events()),
@@ -33,3 +32,4 @@ app = FastAPI(title="Order Service", redoc_url=None, lifespan=lifespan)
 app.include_router(create_health_router("order-service"))
 app.include_router(create_health_router("order-service"), prefix="/service")
 app.include_router(main_router.router)
+install_logging(app, 'orders')

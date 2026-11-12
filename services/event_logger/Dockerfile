@@ -5,4 +5,5 @@ COPY services/event_logger/requirements.txt .
 RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.5.0-py3-none-any.whl && \
     pip install --no-cache-dir -r requirements.txt
 COPY services/event_logger/main.py .
+COPY service_logging ./service_logging
 CMD ["python", "-u", "main.py"]

@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.5.0-py3-
 
 COPY services/client/entrypoint.sh .
 COPY services/client/app ./app
+COPY service_logging ./service_logging
 
 EXPOSE 8000
 

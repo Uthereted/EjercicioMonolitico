@@ -30,6 +30,7 @@ USER 1000
 
 # Copy the app to the container
 COPY services/payment/app /home/pyuser/code/app
+COPY service_logging /home/pyuser/code/service_logging
 
 # Run the application
 ENTRYPOINT ["./entrypoint.sh"]

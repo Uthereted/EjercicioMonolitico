@@ -29,6 +29,7 @@ USER 1000
 
 # Copy the delivery to the container
 COPY services/delivery/app /home/pyuser/code/app
+COPY service_logging /home/pyuser/code/service_logging
 
 # Run the application
 ENTRYPOINT ["./entrypoint.sh"]

@@ -6,10 +6,16 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'services/event_logger'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import main as audit
 
 
 class EventAuditTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        gate = patch.object(audit.runtime, 'wait_available', new_callable=AsyncMock)
+        gate.start()
+        self.addCleanup(gate.stop)
+
     def message(self, event_type='order.created'):
         envelope = {'event_id': f'{event_type}:123', 'event_type': event_type,
                     'producer': 'order-service', 'data': {'order_id': 123}}

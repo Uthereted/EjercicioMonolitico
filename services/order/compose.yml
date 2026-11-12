@@ -19,5 +19,6 @@ services:
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://manufacturing:manufacturing@host.docker.internal:5672/}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-manufacturing.events}
+      LOG_AGGREGATOR_URL: ${LOG_AGGREGATOR_URL:-http://host.docker.internal:13007}
 
     restart: on-failure

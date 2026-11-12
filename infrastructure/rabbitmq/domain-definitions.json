@@ -25,6 +25,15 @@
   ],
   "exchanges": [
     {
+      "name": "manufacturing.logs",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
       "name": "manufacturing.events",
       "vhost": "/",
       "type": "topic",
@@ -53,6 +62,20 @@
     }
   ],
   "queues": [
+    {
+      "name": "application.logs",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "logs.auth",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
     {
       "name": "order.saga",
       "vhost": "/",
@@ -111,6 +134,62 @@
     }
   ],
   "bindings": [
+    {
+      "source": "manufacturing.logs",
+      "vhost": "/",
+      "destination": "application.logs",
+      "destination_type": "queue",
+      "routing_key": "orders.*",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.logs",
+      "vhost": "/",
+      "destination": "application.logs",
+      "destination_type": "queue",
+      "routing_key": "payments.*",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.logs",
+      "vhost": "/",
+      "destination": "application.logs",
+      "destination_type": "queue",
+      "routing_key": "clients.*",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.logs",
+      "vhost": "/",
+      "destination": "application.logs",
+      "destination_type": "queue",
+      "routing_key": "machine.*",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.logs",
+      "vhost": "/",
+      "destination": "application.logs",
+      "destination_type": "queue",
+      "routing_key": "deliveries.*",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.logs",
+      "vhost": "/",
+      "destination": "application.logs",
+      "destination_type": "queue",
+      "routing_key": "event-logger.*",
+      "arguments": {}
+    },
+    {
+      "source": "manufacturing.events",
+      "vhost": "/",
+      "destination": "logs.auth",
+      "destination_type": "queue",
+      "routing_key": "auth.signing-key.published",
+      "arguments": {}
+    },
     {
       "source": "manufacturing.commands",
       "vhost": "/",

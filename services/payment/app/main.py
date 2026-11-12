@@ -1,14 +1,12 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
-from my_chassis import configure_logging, create_health_router
+from my_chassis import create_health_router
+from service_logging import install_logging
 from app import messaging, events, saga
 from app.auth_verifier import fetch_public_key
 from app.routers import payment_router
 from app.sql import database
-
-configure_logging("payment-service")
-
 
 @asynccontextmanager
 async def lifespan(app):
@@ -32,3 +30,4 @@ app = FastAPI(title="Payment Service", docs_url="/payment", redoc_url=None, life
 app.include_router(create_health_router("payment-service"))
 app.include_router(create_health_router("payment-service"), prefix="/service")
 app.include_router(payment_router.router)
+install_logging(app, 'payments')

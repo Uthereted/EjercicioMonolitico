@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 from uuid import uuid4
+from service_logging import runtime
 from . import crypto
 from .events import record_event
 from .sql import database
@@ -9,6 +10,7 @@ from .sql import database
 
 async def publish_signing_key():
     while True:
+        await runtime.wait_available()
         async with database.SessionLocal() as db:
             epoch = uuid4().hex
             pem = crypto.get_public_key_pem()

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from pymongo import MongoClient
 from pymongo.write_concern import WriteConcern
-from my_chassis import configure_logging
+from service_logging import install_logging, runtime
 from my_chassis.events import decode_event
 from my_chassis.messaging import TopicTransport
 
@@ -29,6 +29,7 @@ def store_event(collection, envelope):
 
 
 async def process_event(message, collection):
+    await runtime.wait_available('Archiving business event')
     try:
         envelope = decode_event(message.body, message.routing_key)
         await asyncio.to_thread(store_event, collection, envelope)
@@ -52,7 +53,6 @@ async def subscribe_audit(channel, transport):
 
 
 async def run():
-    configure_logging('event-logger')
     mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017'),
                         serverSelectionTimeoutMS=5000, socketTimeoutMS=5000, connectTimeoutMS=5000)
     collection = mongo[os.getenv('AUDIT_DATABASE', 'manufacturing_audit')]['business_events'].with_options(
@@ -94,6 +94,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Event Logger Health", lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
+install_logging(app, 'event-logger')
 
 
 @app.get('/service/health')
@@ -105,4 +106,4 @@ async def health():
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8000)
+    uvicorn.run(app, host='0.0.0.0', port=8000, log_config=None, access_log=False)

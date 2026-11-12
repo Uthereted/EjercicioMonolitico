@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Depends
 from my_chassis import create_health_router
+from service_logging import install_logging
 from app.dependencies import get_machine, stop_machine
 from app.async_machine import Machine
 from app import messaging, events
@@ -29,6 +30,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Machine Service", version="1.0.0", lifespan=lifespan)
 app.include_router(create_health_router("machine-service"), prefix="/service")
+install_logging(app, 'machine')
 
 @app.get("/machine/status")
 async def get_status(machine: Machine = Depends(get_machine),
