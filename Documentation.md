@@ -91,7 +91,17 @@ python -m pip install "vendor/microservice_chassis-0.5.0-py3-none-any.whl[auth,e
 
 **Health check scope.** All six application services expose unauthenticated `GET /service/health`, returning HTTP 200 and `{"status":"ok","service":"<service-name>"}`. This is a liveness check: it does not check the database or RabbitMQ. The event logger returns 503 if its audit task has stopped. Orders and payments retain their previous `/health` endpoints, and delivery retains `/deliveries/`.
 
-HAProxy sends `GET /service/health` directly to each container on port 8000 and expects exactly HTTP 200. Checks run every two seconds; three consecutive failures mark a server DOWN, and two successful checks restore it to UP. The event logger has a monitoring-only backend with no public gateway route. The gateway's own `/health` only checks the gateway.
+HAProxy sends `GET /service/health` directly to each container on port 8000 and expects exactly HTTP 200. All backends inherit the circuit breaker settings in `default-server`, following the example on page 13 of the course's Reliability and Observability slides:
+
+| Parameter | Value | Behavior |
+| --- | --- | --- |
+| `inter` | `5s` | Interval between checks while healthy |
+| `downinter` | `1s` | Interval between checks while DOWN |
+| `fastinter` | `500ms` | Interval during transitions towards DOWN or UP |
+| `fall` | `2` | Consecutive failures required to mark the server DOWN |
+| `rise` | `3` | Consecutive successes required to restore the server to UP |
+
+Once a server is DOWN, HAProxy stops directing requests to it but keeps checking for recovery. Since each API currently has only one instance, its gateway routes return HTTP 503 while that instance is DOWN. Other backends remain available. These are health-check failures, not a count of business-request errors. The event logger has a monitoring-only backend with no public gateway route. The gateway's own `/health` only checks the gateway.
 
 ### Manual health checks (PowerShell)
 
@@ -107,7 +117,7 @@ docker compose exec event-logger python -c "import urllib.request; print(urllib.
 
 Each request should return `status: ok` and its service name without a token. Open HAProxy statistics at `http://localhost:8404` (credentials `admin` / `admin`) and confirm all six backends are UP with HTTP checks reporting 200.
 
-To observe failure detection, stop orders and allow at least six seconds for checks:
+To observe failure detection, stop orders and allow around ten seconds for checks:
 
 ```powershell
 docker compose stop order-service
@@ -120,7 +130,9 @@ The order server should show DOWN and the gateway should return 503 (PowerShell 
 docker compose start order-service
 ```
 
-After application startup and two successful checks, orders should show UP again. `http://localhost:8080/health` continues to return 200 throughout because it reports gateway liveness independently.
+After application startup and three consecutive successful checks, orders should show UP again. While DOWN, the first recovery check runs at the one-second interval, and the following transition checks run every 500ms. `http://localhost:8080/health` continues to return 200 throughout because it reports gateway liveness independently.
+
+If only `haproxy/haproxy.cfg` has changed, apply the configuration with `docker compose restart haproxy`. No application rebuild is needed for an interval change.
 
 ## RabbitMQ: queues and event contracts
 

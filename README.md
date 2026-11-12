@@ -356,8 +356,13 @@ For example, a delivery is completed with `{"status":"Delivered"}`.
 Only the gateway routes listed above are exposed; legacy aliases were removed.
 Unknown routes return 404. `/health` confirms that the gateway is up;
 HAProxy checks every service with `GET /service/health`, expecting HTTP 200.
-Checks run every two seconds: three failures mark a server DOWN and two successes
-restore it to UP. The event logger is monitored through an internal-only backend.
+Following the course's circuit breaker example, checks run every five seconds
+(`inter 5s`), every second while DOWN (`downinter 1s`), and every 500ms during
+transitions (`fastinter 500ms`). Two consecutive failures mark a server DOWN
+(`fall 2`); three consecutive successes restore it to UP (`rise 3`).
+HAProxy stops routing requests to DOWN servers and returns HTTP 503 when the
+requested backend has no available server. The event logger is monitored
+through an internal-only backend.
 See the HAProxy statistics at http://localhost:8404 (user and password `admin`).
 These endpoints check process liveness, without probing RabbitMQ or the databases.
 See [manual health check steps](Documentation.md#manual-health-checks-powershell).
