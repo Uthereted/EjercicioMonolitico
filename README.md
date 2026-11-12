@@ -95,6 +95,12 @@ from `manufacturing.commands` and `manufacturing.saga.responses`, with event ide
 payload and UTC receipt time. Authentication/key publication is not subscribed
 to this audit queue.
 
+Order Saga transitions also produce `order.saga.state_changed` facts. The recorder
+stores their structured history in `manufacturing_audit.saga_history`, separate
+from application logs. Admin-only order APIs provide all history, history by
+order and the latest Saga states. See [Saga history](docs/saga-history.md) for
+the existing state names, endpoint routes and manual verification steps.
+
 MongoDB keeps its data on the `audit_data` volume and has no published host port.
 The consumer acknowledges a message only after an acknowledged journaled write.
 An upsert keyed by `_id = event_id` keeps redeliveries from duplicating records.
@@ -353,6 +359,9 @@ between services still use the Docker network.
 | Create / list orders | POST / GET | `/api/orders` |
 | Get order | GET | `/api/orders/{id}` |
 | Get order pieces | GET | `/api/orders/{id}/pieces` |
+| Saga history (admin) | GET | `/api/orders/sagas/history` |
+| Order saga history (admin) | GET | `/api/orders/{id}/saga/history` |
+| Latest saga states (admin) | GET | `/api/orders/sagas/latest` |
 | Get machine status | GET | `/api/machine/status` |
 | Query application logs (admin) | GET | `/api/logs` |
 | List deliveries | GET | `/api/deliveries` |

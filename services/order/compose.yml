@@ -20,5 +20,7 @@ services:
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://manufacturing:manufacturing@host.docker.internal:5672/}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-manufacturing.events}
       LOG_AGGREGATOR_URL: ${LOG_AGGREGATOR_URL:-http://host.docker.internal:13007}
+      MONGODB_URL: ${MONGODB_URL:-mongodb://host.docker.internal:27017}
+      AUDIT_DATABASE: manufacturing_audit
 
     restart: on-failure

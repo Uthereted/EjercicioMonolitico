@@ -2,6 +2,7 @@
 from .contracts import SagaPaymentResult, SagaDeliveryResult
 from .events import record_event, RetryEvent
 from .sql import models
+from .saga_history import record_state, change_state
 
 TOPICS = ("saga.payment.reserved", "saga.payment.rejected", "saga.delivery.accepted",
           "saga.delivery.rejected", "saga.payment.confirmed", "saga.payment.released",
@@ -12,6 +13,7 @@ async def start(db, order):
     saga = models.OrderSaga(order_id=order.id)
     db.add(saga)
     await db.flush()
+    await record_state(db, saga)
     await stage_requests(db, order, saga)
     return saga
 
@@ -66,21 +68,21 @@ async def handle_event(db, event_type, payload):
             order.delivery_id = result.delivery_id
         if event_type == "saga.payment.released":
             if saga.state == "PendingPaymentRelease":
-                saga.state = "Suspended"
+                await change_state(db, saga, "Suspended")
             elif saga.state == "AwaitingCompensation":
-                saga.state = "PendingDeliveryCancellation"
+                await change_state(db, saga, "PendingDeliveryCancellation")
         else:
             if saga.state == "PendingDeliveryCancellation":
-                saga.state = "Suspended"
+                await change_state(db, saga, "Suspended")
             elif saga.state == "AwaitingCompensation":
-                saga.state = "PendingPaymentRelease"
+                await change_state(db, saga, "PendingPaymentRelease")
         if saga.state == "Suspended":
             order.status = "Suspended"
         return
     if compensating:
         return
     if not result.accepted:
-        saga.state = "AwaitingCompensation"
+        await change_state(db, saga, "AwaitingCompensation")
         order.status = "Compensating"
         order.integration_error = result.reason
         await stage_requests(db, order, saga)
@@ -88,7 +90,7 @@ async def handle_event(db, event_type, payload):
     if event_type == "saga.payment.confirmed":
         if saga.state != "PendingConfirmation":
             raise RetryEvent("Saga is not ready for payment confirmation")
-        saga.state = "Approved"
+        await change_state(db, saga, "Approved")
         order.payment_completed = True
         order.status = "Accepted"
         await db.flush()
@@ -97,13 +99,13 @@ async def handle_event(db, event_type, payload):
         return
     if payment:
         if saga.state == "PendingPaymentAndDelivery":
-            saga.state = "PendingDelivery"
+            await change_state(db, saga, "PendingDelivery")
         elif saga.state == "PendingPayment":
-            saga.state = "PendingConfirmation"
+            await change_state(db, saga, "PendingConfirmation")
     else:
         order.delivery_id = result.delivery_id
         if saga.state == "PendingPaymentAndDelivery":
-            saga.state = "PendingPayment"
+            await change_state(db, saga, "PendingPayment")
         elif saga.state == "PendingDelivery":
-            saga.state = "PendingConfirmation"
+            await change_state(db, saga, "PendingConfirmation")
     await stage_requests(db, order, saga)

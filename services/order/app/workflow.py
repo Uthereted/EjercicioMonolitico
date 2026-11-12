@@ -50,6 +50,8 @@ async def stage_order_facts(db, order):
 async def bootstrap():
     # Bridge existing databases to the event choreography without recharging.
     async with database.SessionLocal() as db:
+        from .saga_history import snapshot_existing
+        await snapshot_existing(db)
         orders = list((await db.scalars(select(models.Order).where(
             models.Order.client_id.is_not(None),
             models.Order.status.not_in(["Rejected", "Delivered"]),

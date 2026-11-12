@@ -161,6 +161,7 @@ The system uses 13 fact types:
 | `clients.catalogue.published` | Clients | `{client_ids}` | Periodic snapshot that bootstraps new or recovered catalogues |
 | `auth.signing-key.published` | Clients | `{public_key}` | Every JWT consumer stores the public key |
 | `order.created` | Orders | `{order_id, client_id, amount}` | Payments decides and records the charge |
+| `order.saga.state_changed` | Orders | `{saga_id, order_id, state, previous_state, sequence, timestamp, initial_snapshot}` | Event Logger appends idempotent MongoDB Saga history |
 | `payment.approved` / `payment.rejected` | Payments | `{order_id, client_id, amount, accepted, reason}` | Orders records the outcome |
 | `order.paid` | Orders | `{order_id, client_id, amount, address, piece_ids, manufactured_piece_ids}` | Machine persists the work; deliveries creates a pending delivery |
 | `piece.manufacturing.started` / `piece.manufactured` | Machine | `{piece_id, order_id}` | Orders updates the piece |
@@ -176,6 +177,13 @@ The consumer then decides:
 - **nack with requeue**, after one second, for transient errors; the transaction is rolled back first.
 
 ## Order flow
+
+The order coordinator also records its real Saga transitions in MongoDB
+`manufacturing_audit.saga_history`. History is staged transactionally in the
+coordinator's outbox and stored by the Event Logger. Admin-only APIs provide all
+history, one order's history and the latest states, with filters and pagination.
+Existing Sagas get a single snapshot of their current state. See
+[Saga history and manual checks](docs/saga-history.md).
 
 | Step | Trigger | Fact or request | Order status |
 | --- | --- | --- | --- |

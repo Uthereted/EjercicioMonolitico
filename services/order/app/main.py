@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from my_chassis import create_health_router
 from service_logging import install_logging, runtime
-from app import messaging, workflow, events, saga
+from app import messaging, workflow, events, saga, saga_history
 from app.routers import main_router
 from app.sql import database
 from app.auth_verifier import fetch_public_key
@@ -26,10 +26,12 @@ async def lifespan(app):
             with suppress(asyncio.CancelledError):
                 await task
         await database.engine.dispose()
+        saga_history.mongo.close()
 
 
 app = FastAPI(title="Order Service", redoc_url=None, lifespan=lifespan)
 app.include_router(create_health_router("order-service"))
 app.include_router(create_health_router("order-service"), prefix="/service")
+app.include_router(saga_history.router)
 app.include_router(main_router.router)
 install_logging(app, 'orders')

@@ -3,6 +3,9 @@ from sqlalchemy import inspect, text
 
 
 def upgrade(connection):
+    saga_columns = {column["name"] for column in inspect(connection).get_columns("order_saga")}
+    if "history_version" not in saga_columns:
+        connection.execute(text("ALTER TABLE order_saga ADD COLUMN history_version INTEGER NOT NULL DEFAULT 0"))
     client_columns = {column["name"] for column in inspect(connection).get_columns("known_client")}
     for name, definition in {"address": "VARCHAR(500)", "postal_code": "VARCHAR(5)"}.items():
         if name not in client_columns:

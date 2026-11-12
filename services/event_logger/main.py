@@ -15,17 +15,48 @@ from my_chassis.messaging import TopicTransport
 logger = logging.getLogger(__name__)
 TOPICS = ('client.#', 'order.#', 'payment.#', 'piece.#', 'delivery.#')
 SAGA_EXCHANGES = ('manufacturing.commands', 'manufacturing.saga.responses')
+SAGA_HISTORY_EVENT = 'order.saga.state_changed'
+
+
+def saga_history_entry(envelope):
+    data = envelope['data']
+    for field in ('saga_id', 'order_id', 'sequence'):
+        if type(data.get(field)) is not int or data[field] <= 0:
+            raise ValueError(f'Invalid saga history {field}')
+    if not isinstance(data.get('state'), str) or not 1 <= len(data['state']) <= 64:
+        raise ValueError('Invalid saga state')
+    previous = data.get('previous_state')
+    if previous is not None and (not isinstance(previous, str) or not 1 <= len(previous) <= 64):
+        raise ValueError('Invalid previous saga state')
+    if type(data.get('initial_snapshot')) is not bool:
+        raise ValueError('Invalid snapshot flag')
+    timestamp = datetime.fromisoformat(data['timestamp'])
+    if timestamp.tzinfo is None:
+        raise ValueError('Saga history timestamp must include a timezone')
+    expected_id = f"{SAGA_HISTORY_EVENT}:{data['saga_id']}:{data['sequence']}"
+    if envelope.get('producer') != 'order-service' or envelope['event_id'] != expected_id:
+        raise ValueError('Invalid saga history producer or identifier')
+    return {'_id': envelope['event_id'], 'saga_id': data['saga_id'],
+            'order_id': data['order_id'], 'state': data['state'],
+            'previous_state': previous, 'sequence': data['sequence'],
+            'timestamp': timestamp.astimezone(timezone.utc),
+            'initial_snapshot': data['initial_snapshot'],
+            'received_at': datetime.now(timezone.utc)}
 
 
 def store_event(collection, envelope):
     if not envelope['event_type'].startswith(('client.', 'order.', 'payment.', 'piece.', 'delivery.', 'saga.')):
         raise ValueError('Not a business event')
+    entry = saga_history_entry(envelope) if envelope['event_type'] == SAGA_HISTORY_EVENT else None
     collection.update_one({'_id': envelope['event_id']}, {'$setOnInsert': {
         'event_type': envelope['event_type'],
         'producer': envelope.get('producer', 'unknown'),
         'data': envelope['data'],
         'received_at': datetime.now(timezone.utc),
     }}, upsert=True)
+    if entry is not None:
+        history = collection.database.get_collection('saga_history', write_concern=WriteConcern(w=1, j=True))
+        history.update_one({'_id': entry['_id']}, {'$setOnInsert': entry}, upsert=True)
 
 
 async def process_event(message, collection):
@@ -65,6 +96,10 @@ async def run():
             try:
                 await asyncio.to_thread(collection.create_index, [('event_type', 1), ('received_at', -1)])
                 await asyncio.to_thread(collection.create_index, [('data.order_id', 1), ('received_at', 1)])
+                history = collection.database.get_collection('saga_history', write_concern=WriteConcern(w=1, j=True))
+                await asyncio.to_thread(history.create_index, [('saga_id', 1), ('sequence', -1)], unique=True)
+                await asyncio.to_thread(history.create_index, [('order_id', 1), ('sequence', 1)])
+                await asyncio.to_thread(history.create_index, [('timestamp', -1)])
                 connection = await transport.connect()
                 async with connection:
                     channel = await connection.channel()

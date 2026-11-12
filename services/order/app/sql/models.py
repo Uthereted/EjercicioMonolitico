@@ -42,6 +42,7 @@ class OrderSaga(BaseModel):
     id = Column(Integer, primary_key=True)
     order_id = Column(Integer, ForeignKey("manufacturing_order.id"), nullable=False, unique=True)
     state = Column(String(64), nullable=False, default="PendingPaymentAndDelivery")
+    history_version = Column(Integer, nullable=False, default=0, server_default="0")
 
 
 class Piece(BaseModel):
