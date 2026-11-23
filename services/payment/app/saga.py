@@ -28,7 +28,7 @@ async def handle_event(db, event_type, payload):
         ).values(balance=models.Account.balance - command.amount))
         accepted = changed.rowcount == 1
         reservation = models.PaymentReservation(
-            **command.model_dump(), state="Reserved" if accepted else "Rejected",
+            **command.model_dump(exclude={"response_exchange"}), state="Reserved" if accepted else "Rejected",
             reason="" if accepted else "Client has insufficient funds",
         )
         db.add(reservation)

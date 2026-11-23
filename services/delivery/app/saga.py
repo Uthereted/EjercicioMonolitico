@@ -41,6 +41,7 @@ async def handle_event(db, event_type, payload):
         raise ValueError("Conflicting saga delivery")
     response = "saga.delivery.accepted" if result.accepted else "saga.delivery.rejected"
     await record_event(db, response, {
+        "response_exchange": command.response_exchange,
         "saga_id": command.saga_id, "order_id": result.order_id,
         "client_id": delivery.client_id, "delivery_id": delivery.id,
         "accepted": result.accepted, "reason": result.reason,
@@ -58,6 +59,7 @@ async def cancel(db, command):
         raise ValueError("Invalid provisional delivery cancellation")
     delivery.status = "Canceled"
     await record_event(db, "saga.delivery.canceled", {
+        "response_exchange": command.response_exchange,
         "saga_id": command.saga_id, "order_id": result.order_id,
         "client_id": delivery.client_id, "delivery_id": delivery.id,
         "accepted": True, "reason": "",

@@ -1,5 +1,5 @@
 """Event contracts consumed by this service; no peer implementation imports."""
-from typing import Annotated
+from typing import Annotated, Literal
 from pydantic import BaseModel, Field, model_validator
 
 PositiveID = Annotated[int, Field(gt=0, strict=True)]
@@ -16,6 +16,8 @@ class CreateSagaDelivery(BaseModel):
     order_id: PositiveID
     client_id: PositiveID
     address: str = Field(min_length=1, max_length=500)
+    # Default also accepts commands queued before response routing was explicit.
+    response_exchange: Literal["manufacturing.saga.responses"] = "manufacturing.saga.responses"
 
 
 class OrderPaid(OrderCreated):

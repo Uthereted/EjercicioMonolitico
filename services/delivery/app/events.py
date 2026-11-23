@@ -2,7 +2,7 @@
 import os
 from my_chassis.events import RetryEvent
 from service_logging import LoggedEventBus as EventBus
-from my_chassis.messaging import TopicTransport
+from my_chassis.messaging import TopicTransport, ExchangeRouter
 from .sql import database
 
 BROKER_URL = os.getenv("RABBITMQ_URL", "amqps://manufacturing:manufacturing@localhost:5671/")
@@ -10,21 +10,12 @@ saga_outgoing = TopicTransport(BROKER_URL, "manufacturing.saga.responses")
 saga_incoming = TopicTransport(BROKER_URL, "manufacturing.commands")
 
 
-class ExchangeRouter:
-    """Keep the existing outbox, routing saga messages to their own exchange."""
-
-    def __init__(self, domain, saga):
-        self.domain = domain
-        self.saga = saga
-
-    async def publish(self, message, *, routing_key, **kwargs):
-        exchange = self.saga if routing_key.startswith("saga.") else self.domain
-        return await exchange.publish(message, routing_key=routing_key, **kwargs)
-
-
 class SagaEventBus(EventBus):
     async def provision(self, channel):
-        return ExchangeRouter(await super().provision(channel), await saga_outgoing.provision(channel))
+        domain = await super().provision(channel)
+        responses = await saga_outgoing.provision(channel)
+        return ExchangeRouter(domain, responses,
+                              response_exchanges={saga_outgoing.exchange_name: responses})
 
     async def subscribe(self, channel, queue_name, topics):
         if queue_name == "delivery.saga":

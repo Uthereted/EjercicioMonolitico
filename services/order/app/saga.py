@@ -1,6 +1,6 @@
 """Coordinate order approval and compensate rejected payment or delivery decisions."""
 from .contracts import SagaPaymentResult, SagaDeliveryResult
-from .events import record_event, RetryEvent
+from .events import record_event, RetryEvent, SAGA_RESPONSE_EXCHANGE
 from .sql import models
 from .saga_history import record_state, change_state
 
@@ -19,7 +19,8 @@ async def start(db, order):
 
 
 async def stage_requests(db, order, saga):
-    payload = {"saga_id": saga.id, "order_id": order.id, "client_id": order.client_id}
+    payload = {"saga_id": saga.id, "order_id": order.id, "client_id": order.client_id,
+               "response_exchange": SAGA_RESPONSE_EXCHANGE}
     if saga.state in ("AwaitingCompensation", "PendingPaymentRelease", "PendingDeliveryCancellation"):
         await record_event(db, "saga.payment.release", {
             **payload, "amount": order.total_price,

@@ -1,4 +1,4 @@
-microservice_chassis[events,observability,resources]==0.9.0
+microservice_chassis[events,observability,resources]==0.10.0
 pymongo~=4.10
 fastapi~=0.114
 httpx~=0.28

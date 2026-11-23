@@ -3,8 +3,8 @@ FROM python:3.10-slim
 WORKDIR /app
 
 COPY services/machine/requirements.txt .
-COPY vendor/microservice_chassis-0.9.0-py3-none-any.whl /wheels/microservice_chassis-0.9.0-py3-none-any.whl
-RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.9.0-py3-none-any.whl && \
+COPY vendor/microservice_chassis-0.10.0-py3-none-any.whl /wheels/microservice_chassis-0.10.0-py3-none-any.whl
+RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.10.0-py3-none-any.whl && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY services/machine/app ./app

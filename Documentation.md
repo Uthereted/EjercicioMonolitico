@@ -63,7 +63,7 @@ This remains development-grade authentication: registration does not verify emai
 
 ## Microservice chassis
 
-The chassis is the `microservice_chassis` 0.9.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
+The chassis is the `microservice_chassis` 0.10.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
 
 | Module | What it provides | Used by |
 | --- | --- | --- |
@@ -78,9 +78,9 @@ The chassis is the `microservice_chassis` 0.9.0 library, imported in Python as `
 
 Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
 
-**Version 0.9.0 validation:** tests are pending manual execution; see `vendor/README.md`.
+**Version 0.10.0 validation:** tests are pending manual execution; see `vendor/README.md`.
 
-**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.9.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.9.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
+**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.10.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.10.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
 
 ```bash
 python tools/build_chassis.py --source ../chasis_homework
@@ -89,10 +89,10 @@ python tools/build_chassis.py --source ../chasis_homework
 For local development, install the wheel from the repository root:
 
 ```bash
-python -m pip install "vendor/microservice_chassis-0.9.0-py3-none-any.whl[auth,events,database]"
+python -m pip install "vendor/microservice_chassis-0.10.0-py3-none-any.whl[auth,events,database]"
 ```
 
-**Resource snapshots (0.9.0).** The seven Python services include `resources` in
+**Resource snapshots (0.10.0).** The seven Python services include `resources` in
 health responses: UTC sample time, system CPU percentage, memory total/available
 bytes and usage percentage, and disk total/free bytes and usage percentage.
 `ResourceMonitor` takes a sample at startup and every five seconds in a worker
@@ -328,3 +328,15 @@ python tests/test_event_audit_integration.py
 | Docker Compose and deployment fixes | 2 | 3 | 2 | 1 | 2 |
 | Tests (unit and integration) | 4 | 3 | 3 | 0 | 0 |
 | Documentation and presentation | 0 | 0 | 0 | 5 | 5 |
+
+### Saga response routing (0.10.0)
+
+Facts, commands and replies use separate exchanges: `manufacturing.events`,
+`manufacturing.commands` and `manufacturing.saga.responses`. Every new Saga
+command includes `response_exchange: "manufacturing.saga.responses"`, including
+confirmation and compensation commands. Payment and delivery retain this field
+in their transactional outbox replies; the shared chassis router publishes to
+the indicated, provisioned exchange. Other reply destinations are rejected.
+Previously queued commands and replies without the field retain their original
+reply destination. Event identifiers and inbox deduplication remain unchanged.
+No tests or Docker services were run for this change.
