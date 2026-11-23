@@ -1,3 +1,4 @@
+from service_discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
@@ -15,7 +16,8 @@ async def lifespan(app: FastAPI):
     tasks = [asyncio.create_task(messaging.publish_signing_key()),
              asyncio.create_task(events.publish_pending_events())]
     try:
-        yield
+        async with registered_service("client-service"):
+            yield
     finally:
         for task in tasks:
             task.cancel()

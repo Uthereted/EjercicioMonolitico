@@ -1,3 +1,4 @@
+from service_discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
@@ -17,7 +18,8 @@ async def lifespan(app):
              asyncio.create_task(events.consume_events("delivery.domain", messaging.handle_event, topics=messaging.TOPICS)),
              asyncio.create_task(events.consume_events("delivery.saga", saga.handle_event, topics=saga.TOPICS))]
     try:
-        yield
+        async with registered_service("delivery-service"):
+            yield
     finally:
         for task in tasks:
             task.cancel()

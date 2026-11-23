@@ -14,6 +14,7 @@ import aio_pika
 import httpx
 from my_chassis.events import EventBus
 from starlette.responses import JSONResponse
+from service_discovery import get_service_url
 
 LOG_EXCHANGE = 'manufacturing.logs'
 UNAVAILABLE = 'Log aggregation unavailable; operations are paused'
@@ -100,7 +101,11 @@ class LogRuntime:
             raise LogUnavailable(UNAVAILABLE)
         async with self.lock:
             try:
-                response = await self.http.get('/service/health')
+                if os.getenv('CONSUL_URL'):
+                    url = await get_service_url('log-aggregator')
+                else:
+                    url = os.getenv('LOG_AGGREGATOR_URL', 'http://log-aggregator:8000')
+                response = await self.http.get(f'{url.rstrip("/")}/service/health')
                 response.raise_for_status()
                 await self.connect()
                 if message:
@@ -133,7 +138,6 @@ class LogRuntime:
     async def lifespan(self):
         self.lock = asyncio.Lock()
         self.http = httpx.AsyncClient(
-            base_url=os.getenv('LOG_AGGREGATOR_URL', 'http://log-aggregator:8000'),
             timeout=2, trust_env=False,
         )
         logging.getLogger('application').info('Service starting')

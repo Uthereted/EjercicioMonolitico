@@ -1,3 +1,4 @@
+from service_discovery import registered_service
 """Store application messages from a dedicated exchange; query them as an admin."""
 import asyncio
 from contextlib import asynccontextmanager, suppress
@@ -156,7 +157,8 @@ async def lifespan(app):
     task = asyncio.create_task(run())
     app.state.worker = task
     try:
-        yield
+        async with registered_service("log-aggregator"):
+            yield
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError):

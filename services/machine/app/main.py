@@ -1,3 +1,4 @@
+from service_discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Depends
@@ -17,7 +18,8 @@ async def lifespan(app):
     publisher = asyncio.create_task(events.publish_pending_events())
     consumer = asyncio.create_task(events.consume_events("machine.domain", messaging.handle_event, topics=messaging.TOPICS))
     try:
-        yield
+        async with registered_service("machine-service"):
+            yield
     finally:
         for task in (consumer, publisher):
             task.cancel()

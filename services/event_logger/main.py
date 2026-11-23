@@ -1,3 +1,4 @@
+from service_discovery import registered_service
 """Dedicated, idempotent MongoDB archive of business facts and saga messages."""
 import asyncio
 import logging
@@ -120,7 +121,8 @@ async def run():
 async def lifespan(app):
     app.state.worker = asyncio.create_task(run())
     try:
-        yield
+        async with registered_service("event-logger"):
+            yield
     finally:
         app.state.worker.cancel()
         with suppress(asyncio.CancelledError):
