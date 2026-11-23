@@ -1,19 +1,20 @@
 from my_chassis.database import database_ready
 from my_chassis.health import HealthMonitor, mongodb_ready
-from my_chassis.discovery import registered_service
+from my_chassis.discovery import registered_service, get_service_url
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from my_chassis import create_health_router
 from service_logging import install_logging, runtime
 from app import messaging, workflow, events, saga, saga_history
-from app.routers import main_router
+from app.routers import main_router, order_queries
 from app.sql import database
 from app.auth_verifier import fetch_public_key
 
 health_monitor = HealthMonitor({
     'database': lambda: database_ready(database.engine),
     'rabbitmq': lambda: events.bus.available,
+    'client_queries': lambda: get_service_url('client-service'),
     'logging': lambda: runtime.available,
     'public_key': fetch_public_key,
     'workers': lambda: all(not task.done() for task in app.state.tasks),
@@ -49,4 +50,5 @@ app.include_router(create_health_router("order-service", is_ready=lambda: health
 app.include_router(create_health_router("order-service", is_ready=lambda: health_monitor.available), prefix="/service")
 app.include_router(saga_history.router)
 app.include_router(main_router.router)
+app.include_router(order_queries.router)
 install_logging(app, 'orders')

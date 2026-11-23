@@ -91,20 +91,21 @@ The previous database locations were archived under
 `.backups/service-layout-2026-11-05/` during reorganization. That local folder is
 excluded from Git and Docker builds. No existing database records were removed.
 
-## Shared chassis 0.7.0
+## Shared chassis 0.8.0
 
 Health endpoints use cached dependency readiness: SQL, RabbitMQ connections,
 public key and logging for business APIs; MongoDB and consumers for audit.
 Unknown, failed or expired checks return 503. Gateway health also requires all
 seven backends to be available. Manual commands are in `vendor/README.md`.
 
-Version 0.7.0 also includes Consul registration/discovery and structured RabbitMQ
+Version 0.8.0 includes authenticated read-only service queries through Consul,
+separate query handlers, Consul registration/discovery and structured RabbitMQ
 logging with its middleware. `service_logging` only supplies this project's
 settings. Health probes run in the background; requests use their cached result
 without repeating remote health checks. This version awaits manual tests; commands are in `vendor/README.md`.
 
 The independent source repository is [chasis_homework](https://github.com/Uthereted/chasis_homework).
-This project includes its 0.7.0 wheel in `vendor/`; Docker installs that
+This project includes its 0.8.0 wheel in `vendor/`; Docker installs that
 exact artifact for all five APIs and the audit worker. A sibling checkout and
 access to a mutable Git branch are not needed to start the stack.
 
@@ -192,7 +193,7 @@ the preceding Dockerfile instructions do not change. Changing only the code
 does not require reinstalling the dependencies. Avoiding `--no-cache` and
 keeping the Docker cache lets you take advantage of this reuse.
 
-All consumers pin `microservice_chassis[auth,events,database,observability]==0.7.0` (the audit
+All consumers pin `microservice_chassis[auth,events,database,observability]==0.8.0` (the audit
 worker uses the events extra). Docker installs the local wheel first, then the
 remaining requirements. All Dockerfiles now use the repository root as context.
 On another PC, clone this repository, copy `dot_env_example` to `.env` and run
@@ -200,7 +201,7 @@ On another PC, clone this repository, copy `dot_env_example` to `.env` and run
 For local Python development, first install the shared package from the root:
 
 ```powershell
-python -m pip install "vendor/microservice_chassis-0.7.0-py3-none-any.whl[auth,events,database]"
+python -m pip install "vendor/microservice_chassis-0.8.0-py3-none-any.whl[auth,events,database]"
 python -m pip install -r services/order/requirements.txt
 ```
 
@@ -285,19 +286,18 @@ Machine and delivery validate RS256, issuer `manufacturing-client`, audience
 tokens return 401; an unavailable signing key returns 503. They refresh cached
 keys after a signature failure and on persisted `auth.signing-key.published` facts.
 
-Business data is exchanged through RabbitMQ, without business HTTP/RPC
-request/reply. Producers also check the log aggregator's internal HTTP health
-endpoint before operations. Orders and payments validate clients using local
-catalogues maintained by client events. Each JWT consumer keeps a persistent
-public key received through signing-key publication events.
+Saga commands and business facts travel through RabbitMQ. Client profile reads use
+HTTPS: orders and payments discover `client-service` in Consul, then call its
+`GET /clients/{id}` directly with the original user's JWT. Orders reads the current
+address; payments checks existence before a deposit. Unknown clients return 404;
+unavailable query services return 503 before any write.
 
-Newly created clients become visible in the other services asynchronously.
-A request that arrives before its catalogue update may return 404; retry shortly.
-Client data is distributed only through `client.created`, including its address
-and postal code. There is no periodic client catalogue publication. This setup
-assumes the services start with empty databases together; clearing one consumer's
-client data later does not rebuild old clients automatically. Public signing-key
-publication remains periodic so JWT verification can bootstrap independently.
+Read handlers are separate in `client_queries.py`, `order_queries.py` and
+`payment_queries.py`. Client queries return `ClientResponse` and orders consumes
+`ClientDetails`. The services retain their existing databases. Balance queries
+return zero for a missing account without creating it. Existing event projections
+and persisted signing keys remain available; creation/deposit validation uses the
+client query response. Public signing-key publication remains periodic.
 
 Users register publicly, then read/list their own client using its signed
 `client_id`. Admins may read/list all clients and delete them.
@@ -355,7 +355,7 @@ For the saga flow in the root Bruno collection, select `Gateway`, run
 `Client / Register client with login` without authorization, then request a
 token with those credentials. Registration saves `clientId`; next run
 `Payment / Deposit balance` and `Order / Create an order` (saves `orderId`).
-Allow client events to reach the local catalogues before depositing or creating
+Ensure the client service is healthy in Consul before depositing or creating
 the order; retry a catalogue-related 404/409 shortly. Order creation returns 202
 and `PendingPayment`; query `Order / View an order` for asynchronous progress.
 To test compensation, use a new client without a deposit, or use postal code
@@ -453,9 +453,9 @@ returned by each response:
    {"username":"test-client","password":"TestPassword123!","name":"Test client","email":"test@example.org","address":"Calle Mayor 10","postal_code":"01001"}
    ```
 
-   New clients require an address and a five-digit postal code. Orders receives
-   them through `client.created` events. Order creation
-   can omit `address` to use this local copy (409 until the address arrives).
+   New clients require an address and a five-digit postal code. Orders queries
+   the client service through Consul. Order creation can omit `address` to use
+   the returned address (409 if that client has no address).
    Existing clients are retained with empty address fields; their orders can
    still supply an explicit address including the postal code. Delivery coverage
    accepts postal prefixes 01, 20 and 48.
@@ -670,7 +670,7 @@ repository instead of being repeated for each service.
 
 1. Register the client with the public `POST /auth/register`, then log in.
 2. Deposit balance with `POST /payment/{client_id}/deposit` in payments.
-3. Create the order with `POST /order`. Orders validates its local client copy,
+3. Create the order with `POST /order`. Orders queries the client through Consul,
    calculates the amount and creates the explicit saga. It requests a payment
    reservation and a provisional delivery through `manufacturing.commands`.
    The fixed price is **10 balance units per piece**.

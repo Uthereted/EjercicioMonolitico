@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from my_chassis import create_health_router
 from service_logging import install_logging, runtime
-from app.routers import clients_router
+from app.routers import clients_router, client_queries
 from app.sql import database
 from app import crypto, messaging, events
 from app.auth_verifier import verifier
@@ -43,4 +43,5 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Client & Auth Service", docs_url="/client", redoc_url=None, lifespan=lifespan)
 app.include_router(create_health_router("client-service", is_ready=lambda: health_monitor.available), prefix="/service")
 app.include_router(clients_router.router)
+app.include_router(client_queries.router)
 install_logging(app, 'clients')

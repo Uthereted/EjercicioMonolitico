@@ -20,6 +20,7 @@ os.environ['SQLALCHEMY_DATABASE_URL'] = 'sqlite+aiosqlite:///:memory:'
 from app.auth_verifier import verifier
 from app.dependencies import get_db
 from app.routers.main_router import router
+from app.routers.order_queries import router as query_router
 from app.sql import database, models
 
 
@@ -47,6 +48,7 @@ class OrderAccessTests(unittest.IsolatedAsyncioTestCase):
 
         app = FastAPI()
         app.include_router(router)
+        app.include_router(query_router)
         app.dependency_overrides[get_db] = session
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test')
         for mocked in (patch.object(verifier, 'key_loader', AsyncMock(return_value=self.public_key)),

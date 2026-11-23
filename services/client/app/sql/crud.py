@@ -72,17 +72,6 @@ async def get_client_by_email(db: AsyncSession, email: str, *, include_deleted=F
     return await db.scalar(query)
 
 
-async def get_client_profiles(db: AsyncSession, *, client_id=None):
-    query = select(models.Client, models.User.username).outerjoin(
-        models.User, models.User.email == models.Client.email).where(models.Client.deleted.is_(False))
-    if client_id is not None:
-        query = query.where(models.Client.id == client_id)
-    rows = (await db.execute(query)).all()
-    return [schemas.ClientResponse(
-        **schemas.ClientResponse.model_validate(client).model_dump(exclude={'username'}), username=username,
-    ) for client, username in rows]
-
-
 async def delete_client(db: AsyncSession, client: models.Client):
     client.deleted = True
     await db.execute(update(models.RefreshToken).where(models.RefreshToken.user_id.in_(

@@ -1,4 +1,3 @@
-from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,24 +73,3 @@ async def delete_client(client_id: int, db: AsyncSession = Depends(get_db),
         raise HTTPException(404, "Client not found")
     await crud.delete_client(db, client)
     return Response(status_code=204)
-
-
-@router.get("/clients/{client_id}", response_model=schemas.ClientResponse, tags=["Client"])
-async def read_client(client_id: int, db: AsyncSession = Depends(get_db),
-                      token_payload: dict = Depends(verify_jwt)):
-    if not is_admin(token_payload) and token_payload.get("client_id") != client_id:
-        raise HTTPException(403, "You can only read your own client")
-    profiles = await crud.get_client_profiles(db, client_id=client_id)
-    if not profiles:
-        raise HTTPException(status_code=404, detail="Client not found")
-    return profiles[0]
-
-
-@router.get("/clients", response_model=List[schemas.ClientResponse], tags=["Client"])
-async def read_clients(db: AsyncSession = Depends(get_db), token_payload: dict = Depends(verify_jwt)):
-    if is_admin(token_payload):
-        return await crud.get_client_profiles(db)
-    if token_payload.get("service_name") is not None:
-        raise HTTPException(403, "Services cannot list clients")
-    client_id = token_payload.get("client_id")
-    return await crud.get_client_profiles(db, client_id=client_id) if client_id is not None else []

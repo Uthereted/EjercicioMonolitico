@@ -89,27 +89,25 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(key, {"public_key": "public-key"})
         self.assertEqual(await self.facts(), ["client.created", "auth.signing-key.published"])
 
-    @unittest.skipUnless(SERVICE == "order", "client address projection")
-    async def test_order_uses_client_address_from_creation_event_without_http(self):
+    @unittest.skipUnless(SERVICE == "order", "client query through Consul")
+    @patch('app.workflow.query_service', new_callable=AsyncMock)
+    async def test_order_queries_client_address_using_consul(self, query):
         from app.routers import main_router
         from app.sql import schemas
         from fastapi import HTTPException
-        await self.send("client.created", {
-            "client_id": 1, "address": "Calle Mayor 10", "postal_code": "01001"})
-        await self.send("client.created", {"client_id": 1}, "legacy")
-        await self.send("client.created", {"client_id": 2}, "second")
+        query.return_value = {'id': 1, 'address': 'Calle Mayor 10', 'postal_code': '01001'}
         async with database.SessionLocal() as db:
-            known = await db.get(models.KnownClient, 1)
-            self.assertEqual(known.postal_code, "01001")
             order = await main_router.create_order(schemas.OrderPost(client_id=1, number_of_pieces=1),
-                                                  db, token_payload={"roles": ["admin"]})
-            self.assertEqual(order.address, "Calle Mayor 10, 01001")
+                                                  db, token_payload={'roles': ['admin']}, access_token='user-jwt')
+            self.assertEqual(order.address, 'Calle Mayor 10, 01001')
+            query.assert_awaited_once_with('client-service', '/clients/1', access_token='user-jwt')
             command = json.loads(await db.scalar(select(events.Outbox.payload).where(
-                events.Outbox.event_type == "saga.delivery.create")))
-            self.assertEqual(command["address"], order.address)
+                events.Outbox.event_type == 'saga.delivery.create')))
+            self.assertEqual(command['address'], order.address)
+            query.return_value = {'id': 2, 'address': None, 'postal_code': None}
             with self.assertRaises(HTTPException) as caught:
                 await main_router.create_order(schemas.OrderPost(client_id=2, number_of_pieces=1),
-                                               db, token_payload={"roles": ["admin"]})
+                                               db, token_payload={'roles': ['admin']}, access_token='user-jwt')
             self.assertEqual(caught.exception.status_code, 409)
 
     @unittest.skipUnless(SERVICE == "payment", "saga compensation")
@@ -241,15 +239,25 @@ class DomainEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await db.scalar(select(func.count()).select_from(models.Delivery)), len(addresses))
         self.assertEqual(await self.facts(), ["saga.delivery.accepted"] * 3 + ["saga.delivery.rejected"] * 4)
 
-    async def create_order(self):
+    @patch('app.workflow.query_service', new_callable=AsyncMock)
+    async def create_order(self, query):
+        query.return_value = {'id': 1, 'address': 'Madrid', 'postal_code': '01001'}
         from app.routers import main_router
         from app.sql import schemas
         async with database.SessionLocal() as db:
             await db.execute(insert(models.KnownClient).values(id=1).on_conflict_do_nothing())
             await db.commit()
             order = await main_router.create_order(schemas.OrderPost(
-                client_id=1, number_of_pieces=2, address="Madrid"), db, token_payload={"roles": ["admin"]})
+                client_id=1, number_of_pieces=2, address="Madrid"), db, token_payload={"roles": ["admin"]}, access_token="user-jwt")
             return order.id
+
+    @unittest.skipUnless(SERVICE == "payment", "read-only balance query")
+    async def test_balance_query_does_not_create_an_account(self):
+        from app.routers.payment_queries import get_balance
+        async with database.SessionLocal() as db:
+            balance = await get_balance(1, db, token_payload={'roles': ['admin']})
+            self.assertEqual(balance.balance, 0)
+            self.assertEqual(await db.scalar(select(func.count()).select_from(models.Account)), 0)
 
     @unittest.skipUnless(SERVICE == "payment", "payment decision")
     async def test_saga_confirmation_charges_once_without_deducting_balance_again(self):

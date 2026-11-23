@@ -1,8 +1,14 @@
-"""Event contracts consumed by this service; no peer implementation imports."""
+"""Contracts for client queries and consumed events; no peer implementation imports."""
 from typing import Annotated
 from pydantic import BaseModel, Field
 
 PositiveID = Annotated[int, Field(gt=0, strict=True)]
+
+
+class ClientDetails(BaseModel):
+    id: PositiveID
+    address: str | None = None
+    postal_code: str | None = None
 
 
 class ClientCreated(BaseModel):

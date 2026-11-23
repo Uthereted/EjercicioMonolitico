@@ -2,13 +2,13 @@
 
 ## Summary
 
-The manufacturing monolith has been split into five FastAPI microservices (clients, orders, payments, machine and deliveries), each with its own SQLite database, behind an HAProxy API Gateway reachable over HTTP and HTTPS. Internally the services no longer call each other: they follow an **event choreography**, where each service publishes facts about its own state on RabbitMQ and the others react independently. An event logger archives every business fact in MongoDB. Shared infrastructure (JWT verification, a transactional outbox and inbox, broker access and database setup) lives in the `microservice_chassis` library, and every API is protected with JWT tokens issued by the client service.
+The manufacturing monolith has been split into five FastAPI microservices (clients, orders, payments, machine and deliveries), each with its own SQLite database, behind an HAProxy API Gateway reachable over HTTP and HTTPS. Internal Saga commands and business facts use RabbitMQ. Read operations are separated from commands; orders and payments query the client service through Consul-discovered HTTPS calls with the original user JWT. An event logger archives every business fact in MongoDB. Shared infrastructure (JWT verification, a transactional outbox and inbox, broker access and database setup) lives in the `microservice_chassis` library, and every API is protected with JWT tokens issued by the client service.
 
 This document describes the resulting architecture, authentication, the chassis, the event contracts, the reliability guarantees, and how to deploy and test the system. It reflects [Uthereted/EjercicioMonolitico](https://github.com/Uthereted/EjercicioMonolitico) at commit `7feec07`.
 
 ## Architecture overview
 
-The system runs as eleven containers: the HAProxy gateway, Consul, RabbitMQ, the five business microservices, the event logger, the log aggregator and MongoDB. Business data travels through RabbitMQ, without HTTP calls between business services. All six log producers also check the aggregator's internal HTTPS health endpoint before operations. If application logging becomes unavailable, new HTTP operations return 503 and background business operations pause until recovery. The event logger and application log aggregator have separate queues and MongoDB collections.
+The system runs as eleven containers: the HAProxy gateway, Consul, RabbitMQ, the five business microservices, the event logger, the log aggregator and MongoDB. Saga commands and business facts travel through RabbitMQ; client queries use direct HTTPS addresses obtained from Consul. All six log producers use cached readiness from the background logging monitor before operations. If application logging becomes unavailable, new HTTP operations return 503 and background business operations pause until recovery. The event logger and application log aggregator have separate queues and MongoDB collections.
 
 | Container | Role | Storage |
 | --- | --- | --- |
@@ -25,11 +25,11 @@ The system runs as eleven containers: the HAProxy gateway, Consul, RabbitMQ, the
 
 ## Microservices
 
-Each service lives in `services/<name>/`, has its own Dockerfile and is the sole owner of its data: no service reads another service's database. What a service needs from others it keeps as a local copy fed by events, such as the client catalogue and the public signing key.
+Each service lives in `services/<name>/`, has its own Dockerfile and is the sole owner of its data: no service reads another service's database. Services receive business facts and signing keys through events. Orders and payments read authoritative client details through a Consul-discovered HTTPS query.
 
-**Clients** (`client_service`, port 13005) manages clients and is also the authentication service. It stores clients, users, roles and refresh sessions in `client.db`, issues JWT access and refresh tokens, and publishes `client.created`, a periodic `clients.catalogue.published` snapshot and `auth.signing-key.published`.
+**Clients** (`client_service`, port 13005) manages clients and is also the authentication service. It stores clients, users, roles and refresh sessions in `client.db`, issues JWT access and refresh tokens, and publishes `client.created`, `client.deleted` and `auth.signing-key.published`. Client GET handlers and their read model are separate from registration/deletion commands.
 
-**Orders** (`order-service`, port 13001) owns orders and pieces in `orders.db`. It validates the client against its local catalogue, publishes `order.created`, `order.paid` and `order.manufactured`, and updates its view of the order from payment, piece and delivery facts. It no longer tells other services what to do.
+**Orders** (`order-service`, port 13001) owns orders and pieces in `orders.db`. Creation queries the current client profile through Consul and starts the explicit approval Saga. Order/piece GET handlers live in `order_queries.py` and enforce JWT ownership. Saga commands and responses continue through RabbitMQ.
 
 **Payments** (`paymentservice`, port 13006) manages accounts, deposits and charges in `payment.db`. It reacts to `order.created` by charging the client once and publishes `payment.approved` or `payment.rejected`.
 
@@ -49,7 +49,6 @@ The client service also acts as the authentication service. It issues RS256 acce
 | `POST /auth/token` (also `GET`) | `/api/auth/token` | Login with HTTP Basic. Returns `access_token`, `refresh_token`, `expires_in` (3600 s) and `refresh_expires_in` (7 days). |
 | `POST /auth/refresh` | `/api/auth/refresh` | Exchanges a refresh token for a new pair. Each refresh token works once. |
 | `POST /auth/logout` | `/api/auth/logout` | Revokes the refresh session. |
-| `POST /auth/service-token` | `/api/auth/service-token` | Token for a service account, using per-service secrets. Kept for external compatibility; the internal choreography does not use it. |
 | `GET /auth/public-key` | `/api/auth/public-key` | PEM public key. |
 
 The access token contains `sub`, `username`, `email`, `roles`, `client_id` and a unique `jti`. The `client_id` is found by looking up the client with the same email as the user. Passwords are stored with bcrypt. On startup the service creates the `admin` and `user` roles and an `admin` / `admin123` user for testing.
@@ -64,7 +63,7 @@ This remains development-grade authentication: registration does not verify emai
 
 ## Microservice chassis
 
-The chassis is the `microservice_chassis` 0.7.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
+The chassis is the `microservice_chassis` 0.8.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
 
 | Module | What it provides | Used by |
 | --- | --- | --- |
@@ -79,9 +78,9 @@ The chassis is the `microservice_chassis` 0.7.0 library, imported in Python as `
 
 Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
 
-**Version 0.7.0 validation:** tests are pending manual execution; see `vendor/README.md`.
+**Version 0.8.0 validation:** tests are pending manual execution; see `vendor/README.md`.
 
-**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.7.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.7.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
+**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.8.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.8.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
 
 ```bash
 python tools/build_chassis.py --source ../chasis_homework
@@ -90,7 +89,7 @@ python tools/build_chassis.py --source ../chasis_homework
 For local development, install the wheel from the repository root:
 
 ```bash
-python -m pip install "vendor/microservice_chassis-0.7.0-py3-none-any.whl[auth,events,database]"
+python -m pip install "vendor/microservice_chassis-0.8.0-py3-none-any.whl[auth,events,database]"
 ```
 
 **Health check scope.** All seven application services expose unauthenticated
@@ -162,8 +161,8 @@ RabbitMQ imports its topology at boot from `infrastructure/rabbitmq/domain-defin
 
 | Queue | Consumer | Bound routing keys |
 | --- | --- | --- |
-| `order.domain` | Orders | `client.created`, `clients.catalogue.published`, `payment.approved`, `payment.rejected`, `piece.manufacturing.started`, `piece.manufactured`, `delivery.created`, `delivery.ready`, `delivery.delivered`, `auth.signing-key.published` |
-| `payment.domain` | Payments | `client.created`, `clients.catalogue.published`, `order.created`, `auth.signing-key.published` |
+| `order.domain` | Orders | `client.created`, `payment.approved`, `payment.rejected`, `piece.manufacturing.started`, `piece.manufactured`, `delivery.created`, `delivery.ready`, `delivery.delivered`, `auth.signing-key.published` |
+| `payment.domain` | Payments | `client.created`, `order.created`, `auth.signing-key.published` |
 | `machine.domain` | Machine | `order.paid`, `auth.signing-key.published` |
 | `delivery.domain` | Deliveries | `order.paid`, `order.manufactured`, `auth.signing-key.published` |
 | `audit.domain` | Event logger | `client.#`, `order.#`, `payment.#`, `piece.#`, `delivery.#` |
@@ -173,7 +172,6 @@ The system uses 13 fact types:
 | Fact | Publisher | Data | Reaction |
 | --- | --- | --- | --- |
 | `client.created` | Clients | `{client_id}` | Orders and payments add it to their local client catalogue |
-| `clients.catalogue.published` | Clients | `{client_ids}` | Periodic snapshot that bootstraps new or recovered catalogues |
 | `auth.signing-key.published` | Clients | `{public_key}` | Every JWT consumer stores the public key |
 | `order.created` | Orders | `{order_id, client_id, amount}` | Payments decides and records the charge |
 | `order.saga.state_changed` | Orders | `{saga_id, order_id, state, previous_state, sequence, timestamp, initial_snapshot}` | Event Logger appends idempotent MongoDB Saga history |
@@ -213,25 +211,46 @@ Existing Sagas get a single snapshot of their current state. See
 | 9 | User | `PATCH /deliveries/delivery/{id}/status` (`Sent`, then `Delivered`) | `ReadyForDelivery` |
 | 10 | Deliveries | `delivery.delivered` | `Delivered` |
 
-The user creates the order with `POST /order` and their JWT. Orders checks the client in its local catalogue (404 if it does not know it yet; the catalogue fills asynchronously, so a brand-new client may need a short retry), calculates the amount at 10 per piece, saves the order as `PendingPayment` and records `order.created` in the same transaction. Payments charges the client once and publishes `payment.approved` (the order moves to `Accepted`) or `payment.rejected` (it moves to `Rejected` and nothing else happens).
+The user creates the order with `POST /order` and their JWT. Orders first queries
+`GET /clients/{id}` at the healthy `client-service` instance discovered through
+Consul. It forwards the original token over HTTPS and uses the returned address
+when none is supplied. A missing client returns 404; an unavailable query returns
+503 before saving the order. Orders then records `PendingPayment` and starts the
+explicit Saga: payment reservation and provisional delivery commands are sent
+through RabbitMQ, followed by confirmation or compensation.
+
 
 On approval, orders publishes `order.paid` with the address and piece ids, and the order moves to `Manufacturing`. Two services react to that same fact independently: machine persists the work, and deliveries creates a pending delivery and publishes `delivery.created`. The machine builds the pieces one at a time and publishes `piece.manufacturing.started` and `piece.manufactured` for each one.
 
 When every piece is built, orders publishes `order.manufactured`; deliveries marks the delivery `Ready` and publishes `delivery.ready`, and the order becomes `ReadyForDelivery`. The delivery then advances by hand with `PATCH /deliveries/delivery/{id}/status` (`Sent`, then `Delivered`). On `Delivered`, deliveries publishes `delivery.delivered` and the order ends in `Delivered`. Facts may arrive out of order (for example `order.manufactured` before `order.paid` in deliveries), and the services still end in a single, consistent state.
 
+## CQRS and Consul
+
+Query handlers are in `client_queries.py`, `order_queries.py` and `payment_queries.py`.
+They return read models without committing changes. In particular, GET balance does
+not create an account. Commands keep their existing POST/DELETE routes, transactions,
+Saga and outbox. This is basic CQRS with the existing per-service SQLite databases.
+
+`my_chassis.discovery.query_service` resolves `client-service` through Consul's healthy
+instance API and calls the returned IP/port directly over verified HTTPS. The SNI
+name is the registered service name. It forwards the requesting user's bearer token;
+the client query API enforces the same administrator/owner permissions. Service
+addresses are never configured in orders/payments, and internal queries do not pass
+through HAProxy. See `vendor/README.md` for manual checks, which have not been run.
+
 ## Reliability
 
-The goal is that no fact is lost, no order is charged twice and no service needs another one to be up. Five mechanisms, most of them in the chassis's `EventBus`, achieve this.
+The goal is that no fact is lost and no order is charged twice. Creating an order or depositing balance requires the client query service; in-flight Saga operations remain asynchronous. Five mechanisms, most of them in the chassis's `EventBus`, achieve this.
 
 | Mechanism | How it works |
 | --- | --- |
 | Transactional outbox | A service records the fact in its own `event_outbox` table in the same transaction as the state change. A background loop publishes pending rows and marks them published only after RabbitMQ confirms; outages and restarts are retried automatically. |
 | Inbox deduplication | Every received `event_id` is stored in `event_inbox` in the same transaction as its effects. A redelivered or duplicated fact is acknowledged and ignored, so effects happen only once. |
 | Durable, predefined queues | The five queues exist from RabbitMQ's boot, and messages are persistent. A service that is down catches up from its queue when it restarts. |
-| Local copies instead of calls | Orders and payments keep a local client catalogue, and every JWT consumer keeps the public key, so protected requests work while the client service is offline. |
+| Persisted keys and asynchronous facts | JWT consumers keep their public key and ongoing Saga facts use durable queues. New order/deposit validation requires a healthy client service discovered through Consul. |
 | Idempotent business rules | Payments stores one result per order and never charges twice, including after a later deposit on a rejected order. Deliveries creates one delivery per order and never moves it backwards, even if `order.manufactured` arrives before `order.paid`. Machine keeps its queued and interrupted work in `machine.db`. |
 
-The outbox gives at-least-once delivery: a crash between RabbitMQ's confirmation and marking the row as published can send a fact twice, which the receiving inbox then discards. APIs therefore show eventual progress: a `202` from `POST /order` means the order is accepted for processing, not that payment has finished. `POST /order/{id}/retry` re-records any facts an order still needs.
+The outbox gives at-least-once delivery: a crash between RabbitMQ's confirmation and marking the row as published can send a fact twice, which the receiving inbox then discards. APIs therefore show eventual progress: a `202` from `POST /order` means the order is accepted for processing, not that payment has finished. Pending outbox publications are retried in the background.
 
 ## Deployment and testing
 

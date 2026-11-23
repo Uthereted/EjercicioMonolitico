@@ -1,18 +1,24 @@
 """Persist order facts; subscribers decide their own next steps."""
 from fastapi import HTTPException
+from pydantic import ValidationError
+from my_chassis.discovery import query_service
 from sqlalchemy import select
+from .contracts import ClientDetails
 from .events import record_event
 from .sql import database, models
 
 UNIT_PRICE = 10
 
 
-async def validate_client(client_id):
-    async with database.SessionLocal() as db:
-        client = await db.get(models.KnownClient, client_id)
-        if client is None:
-            raise HTTPException(404, "Client is not present in the local catalogue yet")
-        return client
+async def validate_client(client_id, access_token):
+    data = await query_service('client-service', f'/clients/{client_id}', access_token=access_token)
+    try:
+        client = ClientDetails.model_validate(data)
+    except ValidationError as exc:
+        raise HTTPException(502, 'Invalid client query response') from exc
+    if client.id != client_id:
+        raise HTTPException(502, 'Invalid client query response')
+    return client
 
 
 async def pieces_for_order(db, order_id):

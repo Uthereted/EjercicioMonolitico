@@ -6,4 +6,4 @@ aiosqlite~=0.20
 aio-pika~=9.4
 PyJWT[crypto]~=2.9
 httpx~=0.28
-microservice_chassis[auth,events,database,observability]==0.7.0
+microservice_chassis[auth,events,database,observability]==0.8.0

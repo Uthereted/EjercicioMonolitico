@@ -76,7 +76,7 @@ def run(all_checks=False):
                 pending = method == 'POST' and (
                     response.status_code == 404 and (path == '/api/orders' or path.endswith('/deposit'))
                     or response.status_code == 409 and path == '/api/orders'
-                    and response.json().get('detail') == 'Client address is not present in the local catalogue yet')
+                    and response.json().get('detail') == 'Client address is missing')
                 if not pending or time.monotonic() >= deadline:
                     break
                 time.sleep(0.2)

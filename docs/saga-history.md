@@ -150,7 +150,7 @@ $body = @{username = "history-$suffix"; password = 'manual123'; name = 'Saga his
 $customer = Invoke-RestMethod -Method Post -Uri https://localhost:8080/api/auth/register -ContentType 'application/json' -Body $body
 ```
 
-Espera unos segundos a que los servicios reciban `client.created`. Deposita saldo
+Con clientes disponible en Consul, deposita saldo
 y crea un pedido de una pieza:
 
 ```powershell
