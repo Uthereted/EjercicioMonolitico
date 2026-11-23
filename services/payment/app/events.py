@@ -5,7 +5,7 @@ from service_logging import LoggedEventBus as EventBus
 from my_chassis.messaging import TopicTransport
 from .sql import database
 
-BROKER_URL = os.getenv("RABBITMQ_URL", "amqp://manufacturing:manufacturing@localhost:5672/")
+BROKER_URL = os.getenv("RABBITMQ_URL", "amqps://manufacturing:manufacturing@localhost:5671/")
 saga_outgoing = TopicTransport(BROKER_URL, "manufacturing.saga.responses")
 saga_incoming = TopicTransport(BROKER_URL, "manufacturing.commands")
 

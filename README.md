@@ -11,12 +11,46 @@ Dockerfile and `requirements.txt`.
 git clone <repository-url>
 cd EjercicioMonolitico
 cp dot_env_example .env
+docker compose run --rm --build --no-deps -v "${PWD}:/verification" --entrypoint python order-service /verification/tools/generate_tls.py
 docker compose up -d --build
-curl http://localhost:8080/health
+curl --cacert infrastructure/tls/generated/ca.crt https://localhost:8080/health
 ```
 
 Once the containers are up, the whole system is reachable through the API
-Gateway at **http://localhost:8080** (see [API Gateway](#api-gateway)).
+Gateway at **https://localhost:8080** (see [API Gateway](#api-gateway)).
+
+## Local TLS
+
+All application connections use TLS: APIs and health checks, HAProxy backends and
+statistics, Consul HTTPS, RabbitMQ AMQPS and management, and MongoDB. Consul's DNS
+listener is disabled. HAProxy uses Consul Template over HTTPS to generate its
+backends and reload automatically, as in the course's template alternative.
+
+Generate the local certificates once before the first startup, from PowerShell:
+
+```powershell
+docker compose run --rm --build --no-deps -v "${PWD}:/verification" --entrypoint python order-service /verification/tools/generate_tls.py
+docker compose up -d --build
+```
+
+The generator keeps an existing certificate set. Generated private keys stay in
+`infrastructure/tls/generated/`, excluded from Git and image builds. The shared
+certificate is for this local classroom deployment and expires after one year.
+
+Use HTTPS on the existing ports: gateway 8080/8443, statistics 8404, Consul 8500,
+RabbitMQ management 15672 and service ports 13001–13007. AMQPS uses port 5671.
+Plain HTTP/AMQP connections are not accepted. Keep `RABBITMQ_HOSTNAME` unchanged
+when reusing a RabbitMQ data volume; this machine retains its previous node identity. SQLite uses local files, not a
+network connection.
+
+For browsers, PowerShell and Bruno, trust the generated local CA certificate
+`infrastructure/tls/generated/ca.crt` in your user/application certificate store.
+For curl, use `--cacert infrastructure/tls/generated/ca.crt`. The application and
+tests load this CA explicitly; do not disable certificate verification.
+
+```powershell
+docker compose run --rm --no-deps -v "${PWD}:/verification:ro" --entrypoint python order-service /verification/tests/test_tls.py
+```
 
 ## Structure
 
@@ -112,7 +146,7 @@ activation of its subscription; old already-consumed events are not backfilled.
 Inspect recent recorded events (open MongoDB first to avoid PowerShell quote handling):
 
 ```powershell
-docker compose exec mongodb mongosh
+docker compose exec mongodb mongosh --tls --tlsCAFile /tls/ca.crt
 ```
 
 Inside the MongoDB prompt, paste:
@@ -207,21 +241,21 @@ docker compose -f services/order/compose.yml up -d --build
 
 | Service | Compose name | Local port | API documentation |
 | --- | --- | --- | --- |
-| Orders | `order-service` | 13001 | http://localhost:13001/docs |
-| Machines | `machineservice` | 13002 | http://localhost:13002/docs |
-| Deliveries | `delivery` | 13004 | http://localhost:13004/docs |
-| Clients | `client_service` | 13005 | http://localhost:13005/client |
-| Payments | `paymentservice` | 13006 | http://localhost:13006/payment |
+| Orders | `order-service` | 13001 | https://localhost:13001/docs |
+| Machines | `machineservice` | 13002 | https://localhost:13002/docs |
+| Deliveries | `delivery` | 13004 | https://localhost:13004/docs |
+| Clients | `client_service` | 13005 | https://localhost:13005/client |
+| Payments | `paymentservice` | 13006 | https://localhost:13006/payment |
 
 Other endpoints of the stack:
 
 | Component | URL | Credentials |
 | --- | --- | --- |
-| API Gateway (HTTP) | http://localhost:8080 | â€” |
+| API Gateway (HTTPS, 8080) | https://localhost:8080 | â€” |
 | API Gateway (HTTPS) | https://localhost:8443 | â€” |
-| HAProxy stats | http://localhost:8404 | `admin` / `admin` |
-| RabbitMQ management | http://localhost:15672 | `manufacturing` / `manufacturing` |
-| RabbitMQ (AMQP) | `localhost:5672` | `manufacturing` / `manufacturing` |
+| HAProxy stats | https://localhost:8404 | `admin` / `admin` |
+| RabbitMQ management | https://localhost:15672 | `manufacturing` / `manufacturing` |
+| RabbitMQ (AMQPS) | `localhost:5671` | `manufacturing` / `manufacturing` |
 
 ## API Gateway
 
@@ -334,13 +368,13 @@ changes its signing key; existing access tokens then need renewal or a new login
 Persistent opaque refresh sessions survive this change.
 
 The gateway also listens on `https://localhost:8443` with the local certificate
-from `haproxy/gateway.pem`. Port 8080 is kept for HTTP tests.
+from `infrastructure/tls/generated/server.pem`. Both gateway ports, 8080 and 8443, now require HTTPS.
 
 The live checks in `tests/test_integration.py` use the gateway given by `API_BASE_URL`
-(default `http://localhost:8080`). The script obtains a token first; the
+(default `https://localhost:8080`). The script obtains a token first; the
 credentials can be changed with `TEST_AUTH_USERNAME` and `TEST_AUTH_PASSWORD`.
 
-HAProxy gives access to the five services through **http://localhost:8080**.
+HAProxy gives access to the five services through **https://localhost:8080**.
 The individual ports in the table are kept for debugging. Internal calls
 between services still use the Docker network.
 
@@ -380,7 +414,7 @@ transitions (`fastinter 500ms`). Two consecutive failures mark a server DOWN
 HAProxy stops routing requests to DOWN servers and returns HTTP 503 when the
 requested backend has no available server. The event logger is monitored
 through an internal-only backend.
-See the HAProxy statistics at http://localhost:8404 (user and password `admin`).
+See the HAProxy statistics at https://localhost:8404 (user and password `admin`).
 The six producers return 503 when their logging pipeline is unavailable. The
 aggregator monitors RabbitMQ and MongoDB in the background; its health endpoint
 reports that cached state. Business-service databases are not probed by health requests.
@@ -399,7 +433,7 @@ docker compose restart haproxy
 If the images have not been built yet, use `docker compose up -d --build` in
 the first command.
 
-From Postman or Bruno, use `http://localhost:8080` as the base URL and
+From Postman or Bruno, use `https://localhost:8080` as the base URL and
 `Content-Type: application/json` on requests with a body. Save the identifiers
 returned by each response:
 
@@ -453,8 +487,8 @@ client.
 To query the gateway or diagnose a failure:
 
 ```powershell
-Invoke-RestMethod http://localhost:8080/health
-Invoke-RestMethod http://localhost:8080/api/orders
+Invoke-RestMethod https://localhost:8080/health
+Invoke-RestMethod https://localhost:8080/api/orders
 docker compose logs --tail=100 haproxy
 ```
 
@@ -581,10 +615,10 @@ Si todavía no existe `.env`, créalo a partir del ejemplo:
 if (!(Test-Path .env)) { Copy-Item dot_env_example .env }
 docker compose up -d --build
 docker compose ps
-Invoke-RestMethod http://localhost:8080/health
+Invoke-RestMethod https://localhost:8080/health
 ```
 
-Comprueba que los diez contenedores están en ejecución. El endpoint `/health`
+Comprueba que los once contenedores están en ejecución. El endpoint `/health`
 comprueba el gateway; las siguientes pruebas verifican los servicios.
 Usa el entorno Python existente del proyecto, sin necesidad de activarlo:
 
@@ -705,7 +739,7 @@ section.
   services depend on RabbitMQ; wait for its healthcheck to pass or run
   `docker compose ps`.
 - **The gateway returns 502/503 right after startup:** the backends may not be
-  ready yet. Check `http://localhost:13007/service/health` and restore RabbitMQ,
+  ready yet. Check `https://localhost:13007/service/health` and restore RabbitMQ,
   MongoDB or `log-aggregator` if needed. Operations resume automatically when
   application logging is available, followed by HAProxy's recovery checks.
 - **401 on orders or payments:** the JWT is missing or expired, or clients was

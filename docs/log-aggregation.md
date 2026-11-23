@@ -68,9 +68,9 @@ de logs se excluyen para evitar que enviar un log genere otro indefinidamente.
 
 ## Consulta REST
 
-- Gateway: `GET http://localhost:8080/api/logs`.
-- Acceso local directo: `GET http://localhost:13007/logs`.
-- Swagger local: `http://localhost:13007/docs`.
+- Gateway: `GET https://localhost:8080/api/logs`.
+- Acceso local directo: `GET https://localhost:13007/logs`.
+- Swagger local: `https://localhost:13007/docs`.
 - Se exige un JWT válido con rol `admin`: sin token devuelve 401; con un token
   válido sin ese rol devuelve 403. Si aún no se ha recibido la clave, devuelve 503.
 
@@ -124,12 +124,12 @@ Desde la raíz del repositorio, con Docker Desktop abierto y `.env` preparado:
 ```powershell
 docker compose up -d --build
 docker compose ps
-Invoke-RestMethod http://localhost:13007/service/health
+Invoke-RestMethod https://localhost:13007/service/health
 ```
 
 Debe haber diez contenedores. Espera a que la salud del agregador devuelva `ok` y
-los siete backends estén UP en `http://localhost:8404` (`admin` / `admin`).
-En RabbitMQ (`http://localhost:15672`, `manufacturing` / `manufacturing`), comprueba
+los siete backends estén UP en `https://localhost:8404` (`admin` / `admin`).
+En RabbitMQ (`https://localhost:15672`, `manufacturing` / `manufacturing`), comprueba
 el exchange **`manufacturing.logs`**, la cola **`application.logs`** y sus seis bindings.
 El consumidor declara la topología nueva incluso si el volumen RabbitMQ ya existía;
 no hace falta borrar volúmenes ni datos para aplicar este cambio.
@@ -138,29 +138,29 @@ no hace falta borrar volúmenes ni datos para aplicar este cambio.
 
 ```powershell
 $basicAuth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('admin:admin123'))
-$tokens = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/auth/token -Headers @{Authorization = "Basic $basicAuth"}
+$tokens = Invoke-RestMethod -Method Post -Uri https://localhost:8080/api/auth/token -Headers @{Authorization = "Basic $basicAuth"}
 $adminHeaders = @{Authorization = "Bearer $($tokens.access_token)"}
-Invoke-RestMethod http://localhost:8080/api/clients -Headers $adminHeaders
-$result = Invoke-RestMethod 'http://localhost:8080/api/logs?service=clients&level=INFO&limit=10&offset=0' -Headers $adminHeaders
+Invoke-RestMethod https://localhost:8080/api/clients -Headers $adminHeaders
+$result = Invoke-RestMethod 'https://localhost:8080/api/logs?service=clients&level=INFO&limit=10&offset=0' -Headers $adminHeaders
 $result.items | Format-List
 ```
 
 Debe aparecer actividad del servicio `clients`. Para ver todos los emisores:
 
 ```powershell
-Invoke-RestMethod 'http://localhost:8080/api/logs?limit=100' -Headers $adminHeaders
+Invoke-RestMethod 'https://localhost:8080/api/logs?limit=100' -Headers $adminHeaders
 ```
 
 Para fechas, usa un intervalo que incluya los registros de tu ejecución:
 
 ```powershell
-Invoke-RestMethod 'http://localhost:8080/api/logs?date_from=2026-11-12T00%3A00%3A00Z&date_to=2026-11-13T00%3A00%3A00Z&limit=10' -Headers $adminHeaders
+Invoke-RestMethod 'https://localhost:8080/api/logs?date_from=2026-11-12T00%3A00%3A00Z&date_to=2026-11-13T00%3A00%3A00Z&limit=10' -Headers $adminHeaders
 ```
 
 Sin token debe devolver 401:
 
 ```powershell
-Invoke-WebRequest http://localhost:8080/api/logs
+Invoke-WebRequest https://localhost:8080/api/logs
 ```
 
 Repite la consulta con un token de un usuario normal registrado mediante
@@ -194,7 +194,7 @@ async def main():
 asyncio.run(main())
 '@ | docker compose exec -T order-service python -
 
-Invoke-RestMethod 'http://localhost:8080/api/logs?service=orders&limit=30' -Headers $adminHeaders
+Invoke-RestMethod 'https://localhost:8080/api/logs?service=orders&limit=30' -Headers $adminHeaders
 ```
 
 Espera a que el consumidor guarde los mensajes. Deben aparecer los cinco niveles
@@ -224,13 +224,13 @@ y arráncala de nuevo antes de pasar a la siguiente:
 
 ```powershell
 docker compose stop log-aggregator
-Invoke-WebRequest http://localhost:13005/clients -Headers $adminHeaders
-Invoke-WebRequest http://localhost:13005/service/health
+Invoke-WebRequest https://localhost:13005/clients -Headers $adminHeaders
+Invoke-WebRequest https://localhost:13005/service/health
 docker compose start log-aggregator
 ```
 
 Ambas consultas deben devolver 503, tras detectar la caída. Comprueba también
-`http://localhost:8080/api/clients` y los estados DOWN en HAProxy. Su `/health`
+`https://localhost:8080/api/clients` y los estados DOWN en HAProxy. Su `/health`
 propio permanece en 200. Al recuperar el agregador, espera a los estados UP y
 repite la consulta autenticada: debe volver a funcionar sin reiniciar los emisores.
 

@@ -118,22 +118,22 @@ Desde la raíz del proyecto, con Docker Desktop abierto y `.env` preparado:
 docker compose up -d --build
 ```
 
-Espera a que los backends estén UP en `http://localhost:8404` (`admin` / `admin`).
+Espera a que los backends estén UP en `https://localhost:8404` (`admin` / `admin`).
 Después:
 
 ```powershell
 $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('admin:admin123'))
-$tokens = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/auth/token -Headers @{Authorization = "Basic $basic"}
+$tokens = Invoke-RestMethod -Method Post -Uri https://localhost:8080/api/auth/token -Headers @{Authorization = "Basic $basic"}
 $headers = @{Authorization = "Bearer $($tokens.access_token)"}
 ```
 
 ### 2. Consultar Sagas existentes
 
 ```powershell
-$history = Invoke-RestMethod 'http://localhost:8080/api/orders/sagas/history?limit=20' -Headers $headers
+$history = Invoke-RestMethod 'https://localhost:8080/api/orders/sagas/history?limit=20' -Headers $headers
 $history.items | Format-Table order_id, saga_id, sequence, state, timestamp, initial_snapshot
 
-$latest = Invoke-RestMethod 'http://localhost:8080/api/orders/sagas/latest?limit=20' -Headers $headers
+$latest = Invoke-RestMethod 'https://localhost:8080/api/orders/sagas/latest?limit=20' -Headers $headers
 $latest.items | Format-Table order_id, saga_id, state, timestamp
 ```
 
@@ -147,26 +147,26 @@ Registra un cliente nuevo; cambia el nombre de usuario y email en cada repetici�
 ```powershell
 $suffix = [Guid]::NewGuid().ToString('N')
 $body = @{username = "history-$suffix"; password = 'manual123'; name = 'Saga history'; email = "history-$suffix@example.org"; address = 'Calle Mayor 10'; postal_code = '01001'} | ConvertTo-Json
-$customer = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/auth/register -ContentType 'application/json' -Body $body
+$customer = Invoke-RestMethod -Method Post -Uri https://localhost:8080/api/auth/register -ContentType 'application/json' -Body $body
 ```
 
 Espera unos segundos a que los servicios reciban `client.created`. Deposita saldo
 y crea un pedido de una pieza:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/payments/$($customer.id)/deposit" -Headers $headers -ContentType 'application/json' -Body '{"amount":100}'
+Invoke-RestMethod -Method Post -Uri "https://localhost:8080/api/payments/$($customer.id)/deposit" -Headers $headers -ContentType 'application/json' -Body '{"amount":100}'
 $orderBody = @{client_id = $customer.id; number_of_pieces = 1; description = 'Comprobacion de historial'} | ConvertTo-Json
-$order = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/orders -Headers $headers -ContentType 'application/json' -Body $orderBody
+$order = Invoke-RestMethod -Method Post -Uri https://localhost:8080/api/orders -Headers $headers -ContentType 'application/json' -Body $orderBody
 ```
 
 Si el depósito o el pedido devuelve 404 porque el catálogo aún no se ha actualizado,
 espera y repite únicamente esa petición. Después consulta varias veces:
 
 ```powershell
-$page = Invoke-RestMethod "http://localhost:8080/api/orders/$($order.id)/saga/history" -Headers $headers
+$page = Invoke-RestMethod "https://localhost:8080/api/orders/$($order.id)/saga/history" -Headers $headers
 $page.items | Format-Table sequence, state, previous_state, timestamp, initial_snapshot
 
-Invoke-RestMethod "http://localhost:8080/api/orders/sagas/latest?order_id=$($order.id)" -Headers $headers
+Invoke-RestMethod "https://localhost:8080/api/orders/sagas/latest?order_id=$($order.id)" -Headers $headers
 ```
 
 El historial debe terminar en `Approved` y contener las cuatro transiciones
@@ -179,9 +179,9 @@ Crea otro cliente y pedido repitiendo el paso anterior **sin depositar saldo**.
 Su Saga debe pasar por compensación hasta `Suspended`.
 
 ```powershell
-Invoke-RestMethod 'http://localhost:8080/api/orders/sagas/latest?state=Suspended&limit=10&offset=0' -Headers $headers
-Invoke-RestMethod 'http://localhost:8080/api/orders/sagas/history?state=PendingConfirmation&limit=10' -Headers $headers
-curl.exe -i http://localhost:8080/api/orders/sagas/history
+Invoke-RestMethod 'https://localhost:8080/api/orders/sagas/latest?state=Suspended&limit=10&offset=0' -Headers $headers
+Invoke-RestMethod 'https://localhost:8080/api/orders/sagas/history?state=PendingConfirmation&limit=10' -Headers $headers
+curl.exe -i https://localhost:8080/api/orders/sagas/history
 ```
 
 La consulta sin token debe devolver 401. Obtén un token del usuario recién registrado

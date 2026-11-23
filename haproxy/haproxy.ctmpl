@@ -14,18 +14,11 @@ defaults
   # Circuit breaker intervals from the course (Reliability and Observability, p. 13).
   # UP: check every 5s; DOWN: retry every 1s; transitioning: check every 500ms.
   # Two failed checks remove a server; three successful checks restore it.
-  default-server inter 5s downinter 1s fall 2 rise 3 fastinter 500ms resolvers consul init-addr none
-
-resolvers consul
-  nameserver dns consul:8600
-  resolve_retries 3
-  timeout resolve 1s
-  timeout retry 1s
-  hold valid 10s
+  default-server inter 5s downinter 1s fall 2 rise 3 fastinter 500ms
 
 frontend api_gateway
-  bind *:${HAPROXY_PORT}
-  bind *:8443 ssl crt /usr/local/etc/haproxy/haproxy.pem
+  bind *:${HAPROXY_PORT} ssl crt /tls/server.pem
+  bind *:8443 ssl crt /tls/server.pem
 
   # Gateway liveness; backend availability is checked separately.
   http-request return status 200 content-type application/json string '{"status":"OK","service":"api-gateway"}' if { path /health }
@@ -54,47 +47,61 @@ backend be_order
   option httpchk GET /service/health
   http-check expect status 200
   http-request replace-path ^/api/orders(.*)$ /order\1 if { path_reg ^/api/orders(/|$) }
-  server-template order 1 _order-service._tcp.service.consul check
+  {{ range service "order-service" }}
+  server order-{{ .ID }} {{ .Address }}:{{ .Port }} check ssl verify required ca-file /tls/ca.crt sni str(order-service) verifyhost order-service
+  {{ end }}
 
 backend be_client
   option httpchk GET /service/health
   http-check expect status 200
   http-request replace-path ^/api/auth(.*)$ /auth\1 if { path_reg ^/api/auth(/|$) }
   http-request replace-path ^/api/clients(.*)$ /clients\1
-  server-template client 1 _client-service._tcp.service.consul check
+  {{ range service "client-service" }}
+  server client-{{ .ID }} {{ .Address }}:{{ .Port }} check ssl verify required ca-file /tls/ca.crt sni str(client-service) verifyhost client-service
+  {{ end }}
 
 backend be_payment
   option httpchk GET /service/health
   http-check expect status 200
   http-request replace-path ^/api/payments(.*)$ /payment\1
-  server-template payment 1 _payment-service._tcp.service.consul check
+  {{ range service "payment-service" }}
+  server payment-{{ .ID }} {{ .Address }}:{{ .Port }} check ssl verify required ca-file /tls/ca.crt sni str(payment-service) verifyhost payment-service
+  {{ end }}
 
 backend be_machine
   option httpchk GET /service/health
   http-check expect status 200
   http-request replace-path ^/api(/machine.*)$ \1
-  server-template machine 1 _machine-service._tcp.service.consul check
+  {{ range service "machine-service" }}
+  server machine-{{ .ID }} {{ .Address }}:{{ .Port }} check ssl verify required ca-file /tls/ca.crt sni str(machine-service) verifyhost machine-service
+  {{ end }}
 
 backend be_delivery
   option httpchk GET /service/health
   http-check expect status 200
   http-request replace-path ^/api/deliveries(.*)$ /deliveries/delivery\1 if { path_reg ^/api/deliveries(/|$) }
-  server-template delivery 1 _delivery-service._tcp.service.consul check
+  {{ range service "delivery-service" }}
+  server delivery-{{ .ID }} {{ .Address }}:{{ .Port }} check ssl verify required ca-file /tls/ca.crt sni str(delivery-service) verifyhost delivery-service
+  {{ end }}
 
 # Internal audit worker: monitored without exposing a public gateway route.
 backend be_event_logger
   option httpchk GET /service/health
   http-check expect status 200
-  server-template event_logger 1 _event-logger._tcp.service.consul check
+  {{ range service "event-logger" }}
+  server event_logger-{{ .ID }} {{ .Address }}:{{ .Port }} check ssl verify required ca-file /tls/ca.crt sni str(event-logger) verifyhost event-logger
+  {{ end }}
 
 backend be_logs
   option httpchk GET /service/health
   http-check expect status 200
   http-request replace-path ^/api/logs(.*)$ /logs\1
-  server-template logs 1 _log-aggregator._tcp.service.consul check
+  {{ range service "log-aggregator" }}
+  server logs-{{ .ID }} {{ .Address }}:{{ .Port }} check ssl verify required ca-file /tls/ca.crt sni str(log-aggregator) verifyhost log-aggregator
+  {{ end }}
 
 listen stats
-  bind :${HAPROXY_STATS_PORT}
+  bind :${HAPROXY_STATS_PORT} ssl crt /tls/server.pem
   stats enable
   stats uri /
   stats hide-version

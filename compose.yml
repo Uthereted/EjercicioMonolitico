@@ -1,9 +1,22 @@
+x-tls-environment: &tls-environment
+  SSL_CERT_FILE: /tls/ca.crt
+  TLS_CA_FILE: /tls/ca.crt
+  TLS_CERT_FILE: /tls/server.crt
+  TLS_KEY_FILE: /tls/server.key
+  API_SCHEME: https
+
 services:
   consul:
     image: hashicorp/consul:1.21.3
-    command: ["agent", "-dev", "-client=0.0.0.0"]
+    command: ["agent", "-dev", "-client=0.0.0.0", "-bind=127.0.0.1", "-config-file=/consul/config/tls.json"]
     ports:
-      - "127.0.0.1:8500:8500"
+      - "127.0.0.1:8500:8501"
+    volumes:
+      - ./infrastructure/consul/tls.json:/consul/config/tls.json:ro
+      - ./infrastructure/tls/generated:/tls:ro
+    environment:
+      CONSUL_HTTP_ADDR: https://127.0.0.1:8501
+      CONSUL_CACERT: /tls/ca.crt
     healthcheck:
       test: ["CMD", "consul", "info"]
       interval: 5s
@@ -13,19 +26,22 @@ services:
 
   rabbitmq:
     image: rabbitmq:4-management
+    hostname: ${RABBITMQ_HOSTNAME:-rabbitmq}
     ports:
-      - "127.0.0.1:5672:5672"
-      - "127.0.0.1:15672:15672"
+      - "127.0.0.1:5671:5671"
+      - "127.0.0.1:15672:15671"
     environment:
       RABBITMQ_CONFIG_FILES: /etc/rabbitmq/conf.d
       RABBITMQ_DEFAULT_USER: manufacturing
       RABBITMQ_DEFAULT_PASS: manufacturing
     volumes:
+      - ./infrastructure/tls/generated:/tls:ro
+      - ./infrastructure/rabbitmq/30-tls.conf:/etc/rabbitmq/conf.d/30-tls.conf:ro
       - rabbitmq_data:/var/lib/rabbitmq
       - ./infrastructure/rabbitmq/20-domain.conf:/etc/rabbitmq/conf.d/20-domain.conf:ro
       - ./infrastructure/rabbitmq/domain-definitions.json:/etc/rabbitmq/domain-definitions.json:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD-SHELL", "openssl s_client -connect localhost:5671 -servername rabbitmq -CAfile /tls/ca.crt -verify_hostname rabbitmq -verify_return_error -brief < /dev/null > /dev/null 2>&1"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -43,14 +59,16 @@ services:
     ports:
         - "13001:8000"
     volumes:
+        - ./infrastructure/tls/generated:/tls:ro
         - "./services/order/data:/volume"
     environment:
-        CONSUL_URL: http://consul:8500
+        <<: *tls-environment
+        CONSUL_URL: https://consul:8501
         PYTHONUNBUFFERED: 1
         SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
-        MONGODB_URL: mongodb://mongodb:27017
+        MONGODB_URL: mongodb://mongodb:27017/?tls=true&tlsCAFile=/tls/ca.crt
         AUDIT_DATABASE: manufacturing_audit
-        RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+        RABBITMQ_URL: amqps://manufacturing:manufacturing@rabbitmq:5671/?cafile=/tls/ca.crt
         RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
@@ -67,12 +85,14 @@ services:
     ports:
       - '13004:8000'
     volumes:
+      - ./infrastructure/tls/generated:/tls:ro
       - './services/delivery/data:/volume'
     environment:
-      CONSUL_URL: http://consul:8500
+      <<: *tls-environment
+      CONSUL_URL: https://consul:8501
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: ${DELIVERY_DATABASE_URL}
-      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_URL: amqps://manufacturing:manufacturing@rabbitmq:5671/?cafile=/tls/ca.crt
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
@@ -88,12 +108,14 @@ services:
     ports:
       - '13002:8000'
     volumes:
+      - ./infrastructure/tls/generated:/tls:ro
       - './services/machine/data:/volume'
     environment:
-      CONSUL_URL: http://consul:8500
+      <<: *tls-environment
+      CONSUL_URL: https://consul:8501
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/machine.db
-      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_URL: amqps://manufacturing:manufacturing@rabbitmq:5671/?cafile=/tls/ca.crt
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
@@ -110,14 +132,17 @@ services:
     ports:
       - '13005:8000'
     volumes:
+      - ./infrastructure/tls/generated:/tls:ro
       - './services/client/data:/volume'
     environment:
-      - CONSUL_URL=http://consul:8500
-      - PYTHONUNBUFFERED=1
-      - SQLALCHEMY_DATABASE_URL=sqlite+aiosqlite:////volume/client.db
-      - RABBITMQ_URL=amqp://manufacturing:manufacturing@rabbitmq:5672/
-      - RABBITMQ_EXCHANGE=manufacturing.events
+      <<: *tls-environment
+      CONSUL_URL: https://consul:8501
+      PYTHONUNBUFFERED: 1
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/client.db
+      RABBITMQ_URL: amqps://manufacturing:manufacturing@rabbitmq:5671/?cafile=/tls/ca.crt
+      RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
+
 
   paymentservice:
     user: "0:0"
@@ -132,21 +157,25 @@ services:
     ports:
       - '13006:8000'
     volumes:
+      - ./infrastructure/tls/generated:/tls:ro
       - './services/payment/data:/volume'
     environment:
-      CONSUL_URL: http://consul:8500
+      <<: *tls-environment
+      CONSUL_URL: https://consul:8501
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/payment.db
-      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_URL: amqps://manufacturing:manufacturing@rabbitmq:5671/?cafile=/tls/ca.crt
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
   mongodb:
     image: mongo:8.0
+    command: ["mongod", "--bind_ip_all", "--tlsMode", "requireTLS", "--tlsCertificateKeyFile", "/tls/server.pem", "--tlsCAFile", "/tls/ca.crt", "--tlsAllowConnectionsWithoutCertificates"]
     volumes:
+      - ./infrastructure/tls/generated:/tls:ro
       - audit_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ping:1})"]
+      test: ["CMD", "mongosh", "--tls", "--tlsCAFile", "/tls/ca.crt", "--quiet", "--eval", "db.adminCommand({ping:1})"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -163,12 +192,15 @@ services:
         condition: service_healthy
       mongodb:
         condition: service_healthy
+    volumes:
+      - ./infrastructure/tls/generated:/tls:ro
     environment:
-      CONSUL_URL: http://consul:8500
+      <<: *tls-environment
+      CONSUL_URL: https://consul:8501
       PYTHONUNBUFFERED: 1
-      MONGODB_URL: mongodb://mongodb:27017
+      MONGODB_URL: mongodb://mongodb:27017/?tls=true&tlsCAFile=/tls/ca.crt
       AUDIT_DATABASE: manufacturing_audit
-      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_URL: amqps://manufacturing:manufacturing@rabbitmq:5671/?cafile=/tls/ca.crt
       RABBITMQ_EXCHANGE: manufacturing.events
     restart: on-failure
 
@@ -185,22 +217,26 @@ services:
         condition: service_healthy
     ports:
       - '127.0.0.1:13007:8000'
+    volumes:
+      - ./infrastructure/tls/generated:/tls:ro
     environment:
-      CONSUL_URL: http://consul:8500
-      MONGODB_URL: mongodb://mongodb:27017
+      <<: *tls-environment
+      CONSUL_URL: https://consul:8501
+      MONGODB_URL: mongodb://mongodb:27017/?tls=true&tlsCAFile=/tls/ca.crt
       LOG_DATABASE: manufacturing_audit
-      RABBITMQ_URL: amqp://manufacturing:manufacturing@rabbitmq:5672/
+      RABBITMQ_URL: amqps://manufacturing:manufacturing@rabbitmq:5671/?cafile=/tls/ca.crt
     restart: on-failure
 
   haproxy:
-    image: haproxy:latest
+    build:
+      context: .
+      dockerfile: haproxy/Dockerfile
     ports:
       - "8080:8080"
-      - "8443:8443" # <-- AÃ±ades el puerto HTTPS
+      - "8443:8443"
       - "8404:8404"
     volumes:
-      - "./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"
-      - "./haproxy/gateway.pem:/usr/local/etc/haproxy/haproxy.pem:ro" # <-- Montas tu certificado
+      - ./infrastructure/tls/generated:/tls:ro
     environment:
       HAPROXY_PORT: 8080
       HAPROXY_STATS_PORT: 8404

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+import ssl
 import threading
 import time
 from uuid import uuid4
@@ -71,7 +72,7 @@ class LogRuntime:
         if self.connection is None or self.connection.is_closed:
             self.channel = None
             self.connection = await aio_pika.connect(
-                os.getenv('RABBITMQ_URL', 'amqp://manufacturing:manufacturing@rabbitmq:5672/'),
+                os.getenv('RABBITMQ_URL', 'amqps://manufacturing:manufacturing@rabbitmq:5671/'),
                 timeout=2,
             )
         if self.channel is None or self.channel.is_closed:
@@ -104,8 +105,11 @@ class LogRuntime:
                 if os.getenv('CONSUL_URL'):
                     url = await get_service_url('log-aggregator')
                 else:
-                    url = os.getenv('LOG_AGGREGATOR_URL', 'http://log-aggregator:8000')
-                response = await self.http.get(f'{url.rstrip("/")}/service/health')
+                    url = os.getenv('LOG_AGGREGATOR_URL', 'https://log-aggregator:8000')
+                response = await self.http.get(
+                    f'{url.rstrip("/")}/service/health',
+                    extensions={'sni_hostname': 'log-aggregator'} if url.startswith('https://') else {},
+                )
                 response.raise_for_status()
                 await self.connect()
                 if message:
@@ -138,6 +142,7 @@ class LogRuntime:
     async def lifespan(self):
         self.lock = asyncio.Lock()
         self.http = httpx.AsyncClient(
+            verify=ssl.create_default_context(cafile=os.getenv('TLS_CA_FILE')),
             timeout=2, trust_env=False,
         )
         logging.getLogger('application').info('Service starting')

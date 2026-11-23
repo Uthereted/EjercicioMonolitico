@@ -4,6 +4,7 @@
 *.db-wal
 *.db-shm
 .backups/
+infrastructure/tls/generated/
 #.env
 
 

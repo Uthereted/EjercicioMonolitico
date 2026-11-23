@@ -8,7 +8,7 @@ This document describes the resulting architecture, authentication, the chassis,
 
 ## Architecture overview
 
-The system runs as ten containers: the HAProxy gateway, RabbitMQ, the five business microservices, the event logger, the log aggregator and MongoDB. Business data travels through RabbitMQ, without HTTP calls between business services. All six log producers also check the aggregator's internal HTTP health endpoint before operations. If application logging becomes unavailable, new HTTP operations return 503 and background business operations pause until recovery. The event logger and application log aggregator have separate queues and MongoDB collections.
+The system runs as eleven containers: the HAProxy gateway, Consul, RabbitMQ, the five business microservices, the event logger, the log aggregator and MongoDB. Business data travels through RabbitMQ, without HTTP calls between business services. All six log producers also check the aggregator's internal HTTPS health endpoint before operations. If application logging becomes unavailable, new HTTP operations return 503 and background business operations pause until recovery. The event logger and application log aggregator have separate queues and MongoDB collections.
 
 | Container | Role | Storage |
 | --- | --- | --- |
@@ -111,18 +111,18 @@ Rebuild and start the services from the repository root (requires Docker Desktop
 ```powershell
 docker compose up -d --build
 foreach ($port in 13001, 13006, 13004, 13005, 13002, 13007) {
-    Invoke-RestMethod "http://localhost:$port/service/health"
+    Invoke-RestMethod "https://localhost:$port/service/health"
 }
-docker compose exec event-logger python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/service/health').read().decode())"
+docker compose exec event-logger python -c "import urllib.request; print(urllib.request.urlopen('https://localhost:8000/service/health').read().decode())"
 ```
 
-Each request should return `status: ok` and its service name without a token. Open HAProxy statistics at `http://localhost:8404` (credentials `admin` / `admin`) and confirm all seven backends are UP with HTTP checks reporting 200.
+Each request should return `status: ok` and its service name without a token. Open HAProxy statistics at `https://localhost:8404` (credentials `admin` / `admin`) and confirm all seven backends are UP with HTTP checks reporting 200.
 
 To observe failure detection, stop orders and allow around ten seconds for checks:
 
 ```powershell
 docker compose stop order-service
-Invoke-WebRequest http://localhost:8080/api/orders
+Invoke-WebRequest https://localhost:8080/api/orders
 ```
 
 The order server should show DOWN and the gateway should return 503 (PowerShell reports an HTTP error). Other backends should remain UP. Restore orders:
@@ -131,9 +131,9 @@ The order server should show DOWN and the gateway should return 503 (PowerShell 
 docker compose start order-service
 ```
 
-After application startup and three consecutive successful checks, orders should show UP again. While DOWN, the first recovery check runs at the one-second interval, and the following transition checks run every 500ms. `http://localhost:8080/health` continues to return 200 throughout because it reports gateway liveness independently.
+After application startup and three consecutive successful checks, orders should show UP again. While DOWN, the first recovery check runs at the one-second interval, and the following transition checks run every 500ms. `https://localhost:8080/health` continues to return 200 throughout because it reports gateway liveness independently.
 
-If only `haproxy/haproxy.cfg` has changed, apply the configuration with `docker compose restart haproxy`. No application rebuild is needed for an interval change.
+If only `haproxy/haproxy.ctmpl` has changed, apply the configuration with `docker compose restart haproxy`. No application rebuild is needed for an interval change.
 
 ## RabbitMQ: queues and event contracts
 
@@ -225,22 +225,22 @@ From the repository root:
 ```bash
 cp dot_env_example .env
 docker compose up -d --build
-curl http://localhost:8080/health
+curl https://localhost:8080/health
 ```
 
 On Windows PowerShell, use `Copy-Item dot_env_example .env` instead of `cp`. The `.env` file is required: deliveries reads its database URL from it. RabbitMQ (`rabbitmq:4-management`) and MongoDB have healthchecks, and the services that use them wait until they are healthy.
 
 | Access | URL |
 | --- | --- |
-| API Gateway over HTTP | `http://localhost:8080/api/...` |
+| API Gateway over HTTP | `https://localhost:8080/api/...` |
 | API Gateway over HTTPS (local development certificate) | `https://localhost:8443/api/...` |
-| HAProxy statistics | `http://localhost:8404` (admin / admin) |
-| Application logs (admin JWT) | `http://localhost:8080/api/logs` |
-| Log aggregator Swagger (local) | `http://localhost:13007/docs` |
-| RabbitMQ console | `http://localhost:15672` (manufacturing / manufacturing) |
+| HAProxy statistics | `https://localhost:8404` (admin / admin) |
+| Application logs (admin JWT) | `https://localhost:8080/api/logs` |
+| Log aggregator Swagger (local) | `https://localhost:13007/docs` |
+| RabbitMQ console | `https://localhost:15672` (manufacturing / manufacturing) |
 | Swagger for each service | `:13001/docs`, `:13002/docs`, `:13004/docs`, `:13005/client`, `:13006/payment` |
 
-The gateway routes `/api/orders`, `/api/pieces`, `/api/auth`, `/api/clients`, `/api/payments`, `/api/machine` and `/api/deliveries` to the matching service, keeps the legacy `/api/order` and `/api/delivery` routes, and returns 404 for anything else. HTTPS terminates at HAProxy with `haproxy/gateway.pem`. The audit trail can be inspected with:
+The gateway routes `/api/orders`, `/api/pieces`, `/api/auth`, `/api/clients`, `/api/payments`, `/api/machine` and `/api/deliveries` to the matching service, keeps the legacy `/api/order` and `/api/delivery` routes, and returns 404 for anything else. HAProxy accepts HTTPS and connects to the APIs over HTTPS using the local certificate set in `infrastructure/tls/generated/`. Consul Template discovers healthy backends through Consul HTTPS and reloads HAProxy when registrations change. The audit trail can be inspected with:
 
 ```bash
 docker compose exec -T mongodb mongosh --quiet --eval 'db.getSiblingDB("manufacturing_audit").business_events.find({}, {event_type:1,producer:1,received_at:1}).sort({received_at:-1}).limit(20).toArray()'
@@ -257,7 +257,7 @@ python tests/test_refresh_tokens.py
 python tests/test_event_logger.py
 ```
 
-**Integration tests** (with the stack running; they use the gateway at `API_BASE_URL`, `http://localhost:8080` by default). The recovery and audit tests stop containers on purpose and restore them in `finally` blocks:
+**Integration tests** (with the stack running; they use the gateway at `API_BASE_URL`, `https://localhost:8080` by default). The recovery and audit tests stop containers on purpose and restore them in `finally` blocks:
 
 ```bash
 python tests/test_auth_integration.py

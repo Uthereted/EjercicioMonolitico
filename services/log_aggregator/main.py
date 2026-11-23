@@ -21,7 +21,7 @@ QUEUE = 'application.logs'
 SERVICES = ('orders', 'payments', 'clients', 'machine', 'deliveries', 'event-logger')
 LEVELS = ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
 
-mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017'),
+mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017/?tls=true'),
                     serverSelectionTimeoutMS=1000, socketTimeoutMS=1000,
                     connectTimeoutMS=1000, tz_aware=True)
 db = mongo[os.getenv('LOG_DATABASE', 'manufacturing_audit')]
@@ -114,7 +114,7 @@ async def run():
                                     [('service', 1), ('level', 1), ('timestamp', DESCENDING)])
             await asyncio.to_thread(logs.create_index, [('timestamp', DESCENDING), ('_id', DESCENDING)])
             connection = await aio_pika.connect(
-                os.getenv('RABBITMQ_URL', 'amqp://manufacturing:manufacturing@rabbitmq:5672/'),
+                os.getenv('RABBITMQ_URL', 'amqps://manufacturing:manufacturing@rabbitmq:5671/'),
                 timeout=2,
             )
             channel = await connection.channel()

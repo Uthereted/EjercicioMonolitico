@@ -9,5 +9,6 @@ state
 deliverables
 **/data
 .backups
+infrastructure/tls/generated
 
 build

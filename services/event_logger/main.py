@@ -85,12 +85,12 @@ async def subscribe_audit(channel, transport):
 
 
 async def run():
-    mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017'),
+    mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017/?tls=true'),
                         serverSelectionTimeoutMS=5000, socketTimeoutMS=5000, connectTimeoutMS=5000)
     collection = mongo[os.getenv('AUDIT_DATABASE', 'manufacturing_audit')]['business_events'].with_options(
         write_concern=WriteConcern(w=1, j=True))
     transport = TopicTransport(
-        os.getenv('RABBITMQ_URL', 'amqp://manufacturing:manufacturing@localhost:5672/'),
+        os.getenv('RABBITMQ_URL', 'amqps://manufacturing:manufacturing@localhost:5671/'),
         os.getenv('RABBITMQ_EXCHANGE', 'manufacturing.events'))
     try:
         while True:
@@ -143,4 +143,5 @@ async def health():
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8000, log_config=None, access_log=False)
+    uvicorn.run(app, host='0.0.0.0', port=8000, log_config=None, access_log=False,
+                ssl_certfile=os.getenv("TLS_CERT_FILE"), ssl_keyfile=os.getenv("TLS_KEY_FILE"))

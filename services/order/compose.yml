@@ -12,15 +12,18 @@ services:
       - "13001:8000"
 
     volumes:
+      - "../../infrastructure/tls/generated:/tls:ro"
       - "./data:/volume"
 
     environment:
+      SSL_CERT_FILE: /tls/ca.crt
+      TLS_CA_FILE: /tls/ca.crt
       PYTHONUNBUFFERED: 1
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:////volume/orders.db
-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://manufacturing:manufacturing@host.docker.internal:5672/}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqps://manufacturing:manufacturing@host.docker.internal:5671/?cafile=/tls/ca.crt}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-manufacturing.events}
-      LOG_AGGREGATOR_URL: ${LOG_AGGREGATOR_URL:-http://host.docker.internal:13007}
-      MONGODB_URL: ${MONGODB_URL:-mongodb://host.docker.internal:27017}
+      LOG_AGGREGATOR_URL: ${LOG_AGGREGATOR_URL:-https://host.docker.internal:13007}
+      MONGODB_URL: ${MONGODB_URL:-mongodb://host.docker.internal:27017/?tls=true&tlsCAFile=/tls/ca.crt}
       AUDIT_DATABASE: manufacturing_audit
 
     restart: on-failure

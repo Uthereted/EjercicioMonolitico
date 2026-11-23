@@ -17,7 +17,7 @@ State = Literal['PendingPaymentAndDelivery', 'PendingPayment', 'PendingDelivery'
                 'PendingPaymentRelease', 'PendingDeliveryCancellation', 'Suspended']
 EVENT_TYPE = 'order.saga.state_changed'
 
-mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017'),
+mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017/?tls=true'),
                     serverSelectionTimeoutMS=2000, socketTimeoutMS=2000,
                     connectTimeoutMS=2000, tz_aware=True)
 history = mongo[os.getenv('AUDIT_DATABASE', 'manufacturing_audit')]['saga_history']

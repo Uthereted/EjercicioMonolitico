@@ -1,7 +1,9 @@
 COMPOSE_PROJECT_NAME=manufacturing-microservices
+# Stable broker identity for new installations; keep an existing override when upgrading.
+RABBITMQ_HOSTNAME=rabbitmq
 
 DELIVERY_DATABASE_URL=sqlite+aiosqlite:////volume/delivery.db
 
 # Local development (Compose uses the rabbitmq service hostname).
-RABBITMQ_URL=amqp://manufacturing:manufacturing@localhost:5672/
+RABBITMQ_URL=amqps://manufacturing:manufacturing@localhost:5671/?cafile=infrastructure/tls/generated/ca.crt
 RABBITMQ_EXCHANGE=manufacturing.events

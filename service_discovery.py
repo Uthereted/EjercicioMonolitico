@@ -23,7 +23,8 @@ async def get_service_url(name):
     instance = instances[0]
     service = instance["Service"]
     address = service["Address"] or instance["Node"]["Address"]
-    return f"http://{address}:{service['Port']}"
+    scheme = service.get("Meta", {}).get("scheme", "https")
+    return f"{scheme}://{address}:{service['Port']}"
 
 
 def _put(url, data=None):
@@ -45,13 +46,16 @@ async def registered_service(name):
     hostname = socket.gethostname()
     address = socket.gethostbyname(hostname)
     service_id = f"{name}-{hostname}"
+    scheme = os.getenv("API_SCHEME", "https")
     await asyncio.to_thread(_put, f"{consul_url}/v1/agent/service/register", {
         "ID": service_id,
         "Name": name,
         "Address": address,
         "Port": 8000,
+        "Meta": {"scheme": scheme},
         "Check": {
-            "HTTP": f"http://{address}:8000/service/health",
+            "HTTP": f"{scheme}://{address}:8000/service/health",
+            "TLSServerName": name,
             "Interval": "10s",
             "Timeout": "2s",
         },

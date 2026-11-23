@@ -5,6 +5,7 @@ Requires Docker Compose. Test records are retained; stopped services are restore
 import argparse
 import json
 import os
+import ssl
 import subprocess
 import time
 import uuid
@@ -35,7 +36,7 @@ def wait_for(check, timeout=90):
 def documents(order_id):
     query = json.dumps({'data.order_id': order_id})
     expression = 'JSON.stringify(db.getSiblingDB("manufacturing_audit").business_events.find(' + query + ').toArray())'
-    return json.loads(compose('exec', '-T', 'mongodb', 'mongosh', '--quiet', '--eval', expression))
+    return json.loads(compose('exec', '-T', 'mongodb', 'mongosh', '--tls', '--tlsCAFile', '/tls/ca.crt', '--quiet', '--eval', expression))
 
 
 def replay_saga(order_id):
@@ -65,7 +66,9 @@ asyncio.run(publish())
 
 
 def run(all_checks=False):
-    with httpx.Client(base_url=os.getenv('API_BASE_URL', 'http://localhost:8080'), timeout=10) as client:
+    with httpx.Client(base_url=os.getenv('API_BASE_URL', 'https://localhost:8080'), timeout=10,
+                      verify=ssl.create_default_context(cafile=os.getenv('TLS_CA_FILE',
+                          str(ROOT / 'infrastructure/tls/generated/ca.crt')))) as client:
         def request(method, path, expected=None, **kwargs):
             deadline = time.monotonic() + 10
             while True:

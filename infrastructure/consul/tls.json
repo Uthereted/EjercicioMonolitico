@@ -1,0 +1,13 @@
+{
+  "enable_agent_tls_for_checks": true,
+  "ports": {"http": -1, "https": 8501, "dns": -1, "grpc": -1, "grpc_tls": -1},
+  "tls": {
+    "defaults": {
+      "ca_file": "/tls/ca.crt",
+      "cert_file": "/tls/server.crt",
+      "key_file": "/tls/server.key",
+      "verify_outgoing": true
+    },
+    "internal_rpc": {"verify_incoming": true, "verify_server_hostname": true}
+  }
+}
