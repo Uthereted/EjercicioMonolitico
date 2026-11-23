@@ -20,7 +20,14 @@ frontend api_gateway
   bind *:${HAPROXY_PORT} ssl crt /tls/server.pem
   bind *:8443 ssl crt /tls/server.pem
 
-  # Gateway liveness; backend availability is checked separately.
+  # Read cached backend health; do not probe dependencies during this request.
+  http-request return status 503 content-type application/json string '{"status":"unavailable","service":"api-gateway"}' if { path /health } { nbsrv(be_order) lt 1 }
+  http-request return status 503 content-type application/json string '{"status":"unavailable","service":"api-gateway"}' if { path /health } { nbsrv(be_client) lt 1 }
+  http-request return status 503 content-type application/json string '{"status":"unavailable","service":"api-gateway"}' if { path /health } { nbsrv(be_payment) lt 1 }
+  http-request return status 503 content-type application/json string '{"status":"unavailable","service":"api-gateway"}' if { path /health } { nbsrv(be_machine) lt 1 }
+  http-request return status 503 content-type application/json string '{"status":"unavailable","service":"api-gateway"}' if { path /health } { nbsrv(be_delivery) lt 1 }
+  http-request return status 503 content-type application/json string '{"status":"unavailable","service":"api-gateway"}' if { path /health } { nbsrv(be_event_logger) lt 1 }
+  http-request return status 503 content-type application/json string '{"status":"unavailable","service":"api-gateway"}' if { path /health } { nbsrv(be_logs) lt 1 }
   http-request return status 200 content-type application/json string '{"status":"OK","service":"api-gateway"}' if { path /health }
 
   # Normalize trailing slashes so FastAPI does not redirect to an internal path.

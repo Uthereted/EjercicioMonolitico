@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
@@ -16,7 +16,9 @@ router = APIRouter(
     "/",
     summary="Check whether the delivery service is running",
 )
-async def health_check():
+async def health_check(request: Request):
+    if not request.app.state.health_monitor.available:
+        raise HTTPException(503, 'Service dependencies unavailable')
     return {"detail": "OK"}
 
 

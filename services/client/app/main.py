@@ -1,12 +1,24 @@
+from my_chassis.database import database_ready
+from my_chassis.health import HealthMonitor
 from my_chassis.discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from my_chassis import create_health_router
-from service_logging import install_logging
+from service_logging import install_logging, runtime
 from app.routers import clients_router
 from app.sql import database
 from app import crypto, messaging, events
+from app.auth_verifier import verifier
+
+
+health_monitor = HealthMonitor({
+    'database': lambda: database_ready(database.engine),
+    'rabbitmq': lambda: events.bus.available,
+    'logging': lambda: runtime.available,
+    'public_key': verifier.fetch_public_key,
+    'workers': lambda: all(not task.done() for task in app.state.tasks),
+})
 
 
 @asynccontextmanager
@@ -15,8 +27,9 @@ async def lifespan(app: FastAPI):
     crypto.generate_rsa_keys()
     tasks = [asyncio.create_task(messaging.publish_signing_key()),
              asyncio.create_task(events.publish_pending_events())]
+    app.state.tasks = tasks
     try:
-        async with registered_service("client-service"):
+        async with health_monitor.lifespan(), registered_service("client-service"):
             yield
     finally:
         for task in tasks:
@@ -28,6 +41,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Client & Auth Service", docs_url="/client", redoc_url=None, lifespan=lifespan)
-app.include_router(create_health_router("client-service"), prefix="/service")
+app.include_router(create_health_router("client-service", is_ready=lambda: health_monitor.available), prefix="/service")
 app.include_router(clients_router.router)
 install_logging(app, 'clients')

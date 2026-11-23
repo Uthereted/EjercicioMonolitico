@@ -1,4 +1,5 @@
 from my_chassis.discovery import registered_service
+from my_chassis.health import HealthMonitor, mongodb_ready
 """Dedicated, idempotent MongoDB archive of business facts and saga messages."""
 import asyncio
 import logging
@@ -17,6 +18,20 @@ logger = logging.getLogger(__name__)
 TOPICS = ('client.#', 'order.#', 'payment.#', 'piece.#', 'delivery.#')
 SAGA_EXCHANGES = ('manufacturing.commands', 'manufacturing.saga.responses')
 SAGA_HISTORY_EVENT = 'order.saga.state_changed'
+audit_link = None
+
+
+def audit_connected():
+    return (audit_link is not None and not audit_link[0].is_closed
+            and not audit_link[1].is_closed)
+
+
+health_monitor = HealthMonitor({
+    'mongodb': lambda: mongodb_ready(app.state.mongo),
+    'rabbitmq': audit_connected,
+    'logging': lambda: runtime.available,
+    'worker': lambda: not app.state.worker.done(),
+})
 
 
 def saga_history_entry(envelope):
@@ -84,9 +99,8 @@ async def subscribe_audit(channel, transport):
     return queue
 
 
-async def run():
-    mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017/?tls=true'),
-                        serverSelectionTimeoutMS=5000, socketTimeoutMS=5000, connectTimeoutMS=5000)
+async def run(mongo):
+    global audit_link
     collection = mongo[os.getenv('AUDIT_DATABASE', 'manufacturing_audit')]['business_events'].with_options(
         write_concern=WriteConcern(w=1, j=True))
     transport = TopicTransport(
@@ -108,20 +122,26 @@ async def run():
                     queue = await subscribe_audit(channel, transport)
                     logger.info('Business event audit consumer ready')
                     async with queue.iterator() as messages:
+                        audit_link = (connection, channel)
                         async for message in messages:
                             await process_event(message, collection)
             except Exception:
                 logger.exception('Business event audit unavailable; retrying')
                 await asyncio.sleep(2)
+            finally:
+                audit_link = None
     finally:
         mongo.close()
 
 
 @asynccontextmanager
 async def lifespan(app):
-    app.state.worker = asyncio.create_task(run())
+    app.state.mongo = MongoClient(os.getenv('MONGODB_URL', 'mongodb://mongodb:27017/?tls=true'),
+                                 serverSelectionTimeoutMS=5000, socketTimeoutMS=5000,
+                                 connectTimeoutMS=5000)
+    app.state.worker = asyncio.create_task(run(app.state.mongo))
     try:
-        async with registered_service("event-logger"):
+        async with health_monitor.lifespan(), registered_service("event-logger"):
             yield
     finally:
         app.state.worker.cancel()
@@ -136,8 +156,8 @@ install_logging(app, 'event-logger')
 
 @app.get('/service/health')
 async def health():
-    if app.state.worker.done():
-        raise HTTPException(status_code=503, detail='Audit worker stopped')
+    if not health_monitor.available:
+        raise HTTPException(status_code=503, detail='Audit dependencies unavailable')
     return {'status': 'ok', 'service': 'event-logger'}
 
 

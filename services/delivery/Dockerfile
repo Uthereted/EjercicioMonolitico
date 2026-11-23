@@ -9,8 +9,8 @@ USER root
 # Update pip, copy requirements file and install dependencies
 RUN pip install --no-cache-dir --upgrade pip;
 COPY services/delivery/requirements.txt /requirements.txt
-COPY vendor/microservice_chassis-0.6.1-py3-none-any.whl /wheels/microservice_chassis-0.6.1-py3-none-any.whl
-RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.6.1-py3-none-any.whl && \
+COPY vendor/microservice_chassis-0.7.0-py3-none-any.whl /wheels/microservice_chassis-0.7.0-py3-none-any.whl
+RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.7.0-py3-none-any.whl && \
     pip install --no-cache-dir -r /requirements.txt
 
 # We will be working on this folder

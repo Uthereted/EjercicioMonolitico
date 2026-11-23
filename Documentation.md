@@ -64,7 +64,7 @@ This remains development-grade authentication: registration does not verify emai
 
 ## Microservice chassis
 
-The chassis is the `microservice_chassis` 0.6.1 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
+The chassis is the `microservice_chassis` 0.7.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
 
 | Module | What it provides | Used by |
 | --- | --- | --- |
@@ -79,9 +79,9 @@ The chassis is the `microservice_chassis` 0.6.1 library, imported in Python as `
 
 Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
 
-**Version 0.6.1 validation:** tests are pending manual execution; see `vendor/README.md`.
+**Version 0.7.0 validation:** tests are pending manual execution; see `vendor/README.md`.
 
-**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.6.1-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.6.1`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
+**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.7.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.7.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
 
 ```bash
 python tools/build_chassis.py --source ../chasis_homework
@@ -90,10 +90,22 @@ python tools/build_chassis.py --source ../chasis_homework
 For local development, install the wheel from the repository root:
 
 ```bash
-python -m pip install "vendor/microservice_chassis-0.6.1-py3-none-any.whl[auth,events,database]"
+python -m pip install "vendor/microservice_chassis-0.7.0-py3-none-any.whl[auth,events,database]"
 ```
 
-**Health check scope.** All seven application services expose unauthenticated `GET /service/health`, returning HTTP 200 and `{"status":"ok","service":"<service-name>"}` when available. Producers return 503 if the logging pipeline is unavailable; their health handlers read cached state without doing I/O. The aggregator monitors RabbitMQ connectivity and MongoDB read/write availability in the background. The event logger also returns 503 if its audit task has stopped. Orders and payments retain their previous `/health` endpoints, and delivery retains `/deliveries/`. The gateway `/health` continues to report only gateway liveness.
+**Health check scope.** All seven application services expose unauthenticated
+`GET /service/health`. HTTP 200 with `{"status":"ok","service":"<service-name>"}`
+requires healthy dependencies; unknown, failed or expired results return 503.
+The five business APIs use the chassis `HealthMonitor` to probe SQL, the JWT public
+key and background tasks, and read the live connections/channels of their RabbitMQ
+publisher/consumers and cached logging health. Orders also probes its history MongoDB.
+Audit checks its MongoDB and actual consumer connection. The log aggregator caches
+RabbitMQ and MongoDB read/write readiness, with a four-second maximum age. Its health
+covers ingestion, so that client key publication can bootstrap before log-query JWT
+verification becomes available. Endpoint handlers only read cached state; probes run
+in background tasks. Orders/payments `/health` and delivery `/deliveries/` follow the
+same readiness criteria. Gateway `/health` requires all seven backends to be available.
+
 
 HAProxy sends `GET /service/health` directly to each container on port 8000 and expects exactly HTTP 200. All backends inherit the circuit breaker settings in `default-server`, following the example on page 13 of the course's Reliability and Observability slides:
 
@@ -105,7 +117,7 @@ HAProxy sends `GET /service/health` directly to each container on port 8000 and 
 | `fall` | `2` | Consecutive failures required to mark the server DOWN |
 | `rise` | `3` | Consecutive successes required to restore the server to UP |
 
-Once a server is DOWN, HAProxy stops directing requests to it but keeps checking for recovery. Since each API currently has only one instance, its gateway routes return HTTP 503 while that instance is DOWN. Other backends remain available. These are health-check failures, not a count of business-request errors. The event logger has a monitoring-only backend with no public gateway route. The gateway's own `/health` only checks the gateway.
+Once a server is DOWN, HAProxy stops directing requests to it but keeps checking for recovery. Since each API currently has only one instance, its gateway routes return HTTP 503 while that instance is DOWN. Other backends remain available. These are health-check failures, not a count of business-request errors. The event logger has a monitoring-only backend with no public gateway route. The gateway's `/health` also returns 503 when any required backend is unavailable.
 
 ### Manual health checks (PowerShell)
 
@@ -134,7 +146,7 @@ The order server should show DOWN and the gateway should return 503 (PowerShell 
 docker compose start order-service
 ```
 
-After application startup and three consecutive successful checks, orders should show UP again. While DOWN, the first recovery check runs at the one-second interval, and the following transition checks run every 500ms. `https://localhost:8080/health` continues to return 200 throughout because it reports gateway liveness independently.
+After application startup and three consecutive successful checks, orders should show UP again. While DOWN, the first recovery check runs at the one-second interval, and the following transition checks run every 500ms. `https://localhost:8080/health` returns 503 until all required backends have recovered.
 
 If only `haproxy/haproxy.ctmpl` has changed, apply the configuration with `docker compose restart haproxy`. No application rebuild is needed for an interval change.
 

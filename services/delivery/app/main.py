@@ -1,13 +1,24 @@
+from my_chassis.database import database_ready
+from my_chassis.health import HealthMonitor
 from my_chassis.discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from my_chassis import create_health_router
-from service_logging import install_logging
+from service_logging import install_logging, runtime
 from .routers import delivery_router
 from .sql import database
 from . import messaging, events, saga
 from .auth_verifier import fetch_public_key
+
+
+health_monitor = HealthMonitor({
+    'database': lambda: database_ready(database.engine),
+    'rabbitmq': lambda: events.bus.available,
+    'logging': lambda: runtime.available,
+    'public_key': fetch_public_key,
+    'workers': lambda: all(not task.done() for task in app.state.tasks),
+})
 
 
 @asynccontextmanager
@@ -17,8 +28,9 @@ async def lifespan(app):
     tasks = [asyncio.create_task(events.publish_pending_events()),
              asyncio.create_task(events.consume_events("delivery.domain", messaging.handle_event, topics=messaging.TOPICS)),
              asyncio.create_task(events.consume_events("delivery.saga", saga.handle_event, topics=saga.TOPICS))]
+    app.state.tasks = tasks
     try:
-        async with registered_service("delivery-service"):
+        async with health_monitor.lifespan(), registered_service("delivery-service"):
             yield
     finally:
         for task in tasks:
@@ -30,6 +42,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Delivery microservice", version="1.0.0", lifespan=lifespan)
-app.include_router(create_health_router("delivery-service"), prefix="/service")
+app.state.health_monitor = health_monitor
+app.include_router(create_health_router("delivery-service", is_ready=lambda: health_monitor.available), prefix="/service")
 app.include_router(delivery_router.router)
 install_logging(app, 'deliveries')

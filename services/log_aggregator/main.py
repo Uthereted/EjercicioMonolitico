@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+import time
 from typing import Literal
 
 import aio_pika
@@ -28,6 +29,7 @@ db = mongo[os.getenv('LOG_DATABASE', 'manufacturing_audit')]
 logs = db.get_collection('application_logs', write_concern=WriteConcern(w=1, j=True))
 keys = db.get_collection('log_auth_keys', write_concern=WriteConcern(w=1, j=True))
 ready = False
+checked_at = 0
 
 
 async def load_public_key():
@@ -106,7 +108,7 @@ async def consume_key(message):
 
 
 async def run():
-    global ready
+    global ready, checked_at
     while True:
         connection = None
         try:
@@ -134,6 +136,7 @@ async def run():
                 # A write probe also detects a read-only/unwritable database.
                 await asyncio.to_thread(db.log_status.update_one, {'_id': 'health'},
                                         {'$set': {'checked_at': datetime.now(timezone.utc)}}, upsert=True)
+                checked_at = time.monotonic()
                 ready = True
                 await asyncio.sleep(1)
         except Exception:
@@ -171,7 +174,9 @@ app = FastAPI(title='Log Aggregation Service', lifespan=lifespan)
 
 @app.get('/service/health')
 async def health():
-    if not ready or app.state.worker.done():
+    # Ingestion must start before the client's first key is published through RabbitMQ.
+    # JWT key availability is checked when authenticating log-query requests.
+    if not ready or time.monotonic() - checked_at >= 4 or app.state.worker.done():
         raise HTTPException(503, 'Log storage or broker unavailable')
     return {'status': 'ok', 'service': 'log-aggregator'}
 

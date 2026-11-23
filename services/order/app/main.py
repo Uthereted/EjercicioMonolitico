@@ -1,3 +1,5 @@
+from my_chassis.database import database_ready
+from my_chassis.health import HealthMonitor, mongodb_ready
 from my_chassis.discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
@@ -9,6 +11,16 @@ from app.routers import main_router
 from app.sql import database
 from app.auth_verifier import fetch_public_key
 
+health_monitor = HealthMonitor({
+    'database': lambda: database_ready(database.engine),
+    'rabbitmq': lambda: events.bus.available,
+    'logging': lambda: runtime.available,
+    'public_key': fetch_public_key,
+    'workers': lambda: all(not task.done() for task in app.state.tasks),
+    'history_database': lambda: mongodb_ready(saga_history.mongo),
+})
+
+
 @asynccontextmanager
 async def lifespan(app):
     await database.initialize()
@@ -18,8 +30,9 @@ async def lifespan(app):
     tasks = [asyncio.create_task(events.publish_pending_events()),
              asyncio.create_task(events.consume_events("order.domain", messaging.handle_event, topics=messaging.TOPICS)),
              asyncio.create_task(events.consume_events("order.saga", saga.handle_event, topics=saga.TOPICS))]
+    app.state.tasks = tasks
     try:
-        async with registered_service("order-service"):
+        async with health_monitor.lifespan(), registered_service("order-service"):
             yield
     finally:
         for task in tasks:
@@ -32,8 +45,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Order Service", redoc_url=None, lifespan=lifespan)
-app.include_router(create_health_router("order-service"))
-app.include_router(create_health_router("order-service"), prefix="/service")
+app.include_router(create_health_router("order-service", is_ready=lambda: health_monitor.available))
+app.include_router(create_health_router("order-service", is_ready=lambda: health_monitor.available), prefix="/service")
 app.include_router(saga_history.router)
 app.include_router(main_router.router)
 install_logging(app, 'orders')
