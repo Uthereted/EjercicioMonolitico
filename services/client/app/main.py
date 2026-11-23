@@ -1,5 +1,5 @@
 from my_chassis.database import database_ready
-from my_chassis.health import HealthMonitor
+from my_chassis.health import HealthMonitor, ResourceMonitor
 from my_chassis.discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
@@ -11,6 +11,8 @@ from app.sql import database
 from app import crypto, messaging, events
 from app.auth_verifier import verifier
 
+
+resource_monitor = ResourceMonitor()
 
 health_monitor = HealthMonitor({
     'database': lambda: database_ready(database.engine),
@@ -29,7 +31,7 @@ async def lifespan(app: FastAPI):
              asyncio.create_task(events.publish_pending_events())]
     app.state.tasks = tasks
     try:
-        async with health_monitor.lifespan(), registered_service("client-service"):
+        async with health_monitor.lifespan(), resource_monitor.lifespan(), registered_service("client-service"):
             yield
     finally:
         for task in tasks:
@@ -41,7 +43,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Client & Auth Service", docs_url="/client", redoc_url=None, lifespan=lifespan)
-app.include_router(create_health_router("client-service", is_ready=lambda: health_monitor.available), prefix="/service")
+app.include_router(create_health_router("client-service", is_ready=lambda: health_monitor.available, resources=resource_monitor.snapshot), prefix="/service")
 app.include_router(clients_router.router)
 app.include_router(client_queries.router)
 install_logging(app, 'clients')

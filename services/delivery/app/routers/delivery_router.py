@@ -19,7 +19,7 @@ router = APIRouter(
 async def health_check(request: Request):
     if not request.app.state.health_monitor.available:
         raise HTTPException(503, 'Service dependencies unavailable')
-    return {"detail": "OK"}
+    return {"detail": "OK", "resources": request.app.state.resource_monitor.snapshot()}
 
 
 @router.get(

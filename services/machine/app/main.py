@@ -1,5 +1,5 @@
 from my_chassis.database import database_ready
-from my_chassis.health import HealthMonitor
+from my_chassis.health import HealthMonitor, ResourceMonitor
 from my_chassis.discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
@@ -11,6 +11,8 @@ from app.async_machine import Machine
 from app import messaging, events
 from app.sql import database
 from app.auth_verifier import fetch_public_key, verify_jwt
+
+resource_monitor = ResourceMonitor()
 
 health_monitor = HealthMonitor({
     'database': lambda: database_ready(database.engine),
@@ -30,7 +32,7 @@ async def lifespan(app):
     consumer = asyncio.create_task(events.consume_events("machine.domain", messaging.handle_event, topics=messaging.TOPICS))
     app.state.tasks = [publisher, consumer, *machine.tasks]
     try:
-        async with health_monitor.lifespan(), registered_service("machine-service"):
+        async with health_monitor.lifespan(), resource_monitor.lifespan(), registered_service("machine-service"):
             yield
     finally:
         for task in (consumer, publisher):
@@ -43,7 +45,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Machine Service", version="1.0.0", lifespan=lifespan)
-app.include_router(create_health_router("machine-service", is_ready=lambda: health_monitor.available), prefix="/service")
+app.include_router(create_health_router("machine-service", is_ready=lambda: health_monitor.available, resources=resource_monitor.snapshot), prefix="/service")
 install_logging(app, 'machine')
 
 @app.get("/machine/status")

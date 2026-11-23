@@ -1,13 +1,15 @@
 # Chasis compartido
 
-`microservice_chassis-0.8.0-py3-none-any.whl` es la distribución de
+`microservice_chassis-0.9.0-py3-none-any.whl` es la distribución de
 `chasis_homework` utilizada por los siete servicios Python. No requiere un
 checkout hermano ni descargar una rama mutable para arrancar con Docker.
 
-SHA-256: `153f0b89aef35c56f234b3ae51de64d7b0331778ff1e3ae0ef5f1cfe4bf932d1`
+SHA-256: `a7d5a7e55bf712900e16645040d38d689ea2ed0e8ff17af1879fe936cab14eec`
 
 El chasis incluye los siguientes módulos reutilizables:
 
+- `my_chassis.health.ResourceMonitor`: CPU, memoria y disco con muestra periódica
+  guardada en memoria; el extra `resources` instala psutil.
 - `my_chassis.health.HealthMonitor`: comprobaciones periódicas de dependencias
   y respuestas de salud basadas solo en el estado guardado.
 - `my_chassis.discovery`: registro, baja, descubrimiento y consultas GET con Consul.
@@ -19,7 +21,7 @@ El chasis incluye los siguientes módulos reutilizables:
 `service_logging` conserva únicamente la configuración propia de este proyecto:
 el exchange `manufacturing.logs` y las rutas de salud que ya existían.
 
-La wheel 0.5.0 anterior se conserva; los Dockerfile y requisitos utilizan 0.8.0.
+La wheel 0.5.0 anterior se conserva; los Dockerfile y requisitos utilizan 0.9.0.
 El monitor actualiza la salud aproximadamente cada segundo. Las llamadas normales
 usan ese estado guardado; no consultan de nuevo Consul ni el health check del
 colector. Si falla o tiene más de cuatro segundos, se bloquea la operación.
@@ -70,7 +72,7 @@ en todos los Dockerfile antes de reconstruir las imágenes.
 Los monitores son internos; el endpoint no ejecuta consultas SQL, pings MongoDB
 ni solicitudes HTTP. No se han ejecutado las pruebas de esta versión.
 
-## CQRS con Consul (0.8.0)
+## CQRS con Consul (0.9.0)
 
 Las lecturas están separadas en `client_queries.py`, `order_queries.py` y
 `payment_queries.py`. Devuelven los modelos de lectura con las mismas rutas y
@@ -87,3 +89,33 @@ La consulta 404 indica un cliente inexistente; si el servicio no está disponibl
 se devuelve 503 sin guardar el pedido ni efectuar el depósito. Los monitores de
 pedidos y pagos también comprueban en segundo plano la disponibilidad registrada
 del servicio de consultas de clientes. No se han ejecutado las pruebas.
+
+## Recursos del health check (0.9.0)
+
+Los siete servicios Python devuelven `resources` en `/service/health`:
+
+- `sampled_at`: instante UTC en que se obtuvo la muestra.
+- `cpu_percent`: porcentaje de CPU del sistema visible para el proceso.
+- `memory`: memoria total, disponible y porcentaje usado.
+- `disk`: ruta, capacidad, espacio libre y porcentaje usado.
+
+Se recoge una muestra al arrancar y después cada cinco segundos en un hilo
+auxiliar. Las llamadas HTTP solo devuelven el resultado guardado. Si no hay
+muestra válida o tiene quince segundos, el health check devuelve 503. Las
+comprobaciones de dependencias mantienen su propia caducidad de cuatro segundos.
+`HEALTH_DISK_PATH` permite cambiar la ruta del disco, que por defecto es `/`.
+
+En Docker, CPU y memoria pueden describir la máquina Linux anfitriona; no se
+presentan como uso exclusivo ni como límites del contenedor. El gateway conserva
+su comprobación de disponibilidad de backends; las métricas están en los servicios.
+
+Tras reconstruir, comprueba los campos desde PowerShell (con la CA local confiada):
+
+```powershell
+Invoke-RestMethod https://localhost:13001/service/health | ConvertTo-Json -Depth 5
+```
+
+Los casos de caché y caducidad de recursos están en `tests/test_health_checks.py`.
+`tests/test_tls.py` comprueba también su presencia en los siete servicios.
+Las pruebas no se han ejecutado. La parte del exchange de respuesta de la Saga
+queda para el siguiente paso.

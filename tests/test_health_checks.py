@@ -1,11 +1,11 @@
 """Manual readiness checks with fake dependencies; no live databases or broker."""
 import asyncio
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 from fastapi import FastAPI
-from my_chassis.health import HealthMonitor, create_health_router
+from my_chassis.health import HealthMonitor, ResourceMonitor, create_health_router
 
 
 class HealthChecks(unittest.IsolatedAsyncioTestCase):
@@ -75,6 +75,40 @@ class HealthChecks(unittest.IsolatedAsyncioTestCase):
         key.return_value = True
         await self.wait_for_refresh(monitor, after=checked_at)
         self.assertEqual((await client.get('/health')).status_code, 200)
+
+    async def resource_service(self):
+        resources = ResourceMonitor(interval=3600)
+        resources.collect = Mock(return_value={
+            'sampled_at': '2026-01-01T00:00:00+00:00', 'cpu_percent': 12.5,
+            'memory': {'total_bytes': 1000, 'available_bytes': 750, 'used_percent': 25},
+            'disk': {'path': '/', 'total_bytes': 2000, 'free_bytes': 1000, 'used_percent': 50},
+        })
+        context = resources.lifespan()
+        await context.__aenter__()
+        self.addAsyncCleanup(context.__aexit__, None, None, None)
+        app = FastAPI()
+        app.include_router(create_health_router('example', is_ready=lambda: True,
+                                               resources=resources.snapshot))
+        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test')
+        self.addAsyncCleanup(client.aclose)
+        return resources, client
+
+    async def test_resource_requests_only_read_the_saved_sample(self):
+        resources, client = await self.resource_service()
+        for _ in range(10):
+            response = await client.get('/health')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['resources']['cpu_percent'], 12.5)
+            self.assertIn('memory', response.json()['resources'])
+            self.assertIn('disk', response.json()['resources'])
+        resources.collect.assert_called_once()
+
+    async def test_expired_resource_sample_returns_503_without_measuring(self):
+        resources, client = await self.resource_service()
+        resources.checked_at -= 16
+        response = await client.get('/health')
+        self.assertEqual(response.status_code, 503)
+        resources.collect.assert_called_once()
 
 
 if __name__ == '__main__':

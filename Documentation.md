@@ -63,7 +63,7 @@ This remains development-grade authentication: registration does not verify emai
 
 ## Microservice chassis
 
-The chassis is the `microservice_chassis` 0.8.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
+The chassis is the `microservice_chassis` 0.9.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
 
 | Module | What it provides | Used by |
 | --- | --- | --- |
@@ -78,9 +78,9 @@ The chassis is the `microservice_chassis` 0.8.0 library, imported in Python as `
 
 Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
 
-**Version 0.8.0 validation:** tests are pending manual execution; see `vendor/README.md`.
+**Version 0.9.0 validation:** tests are pending manual execution; see `vendor/README.md`.
 
-**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.8.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.8.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
+**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.9.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.9.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
 
 ```bash
 python tools/build_chassis.py --source ../chasis_homework
@@ -89,11 +89,20 @@ python tools/build_chassis.py --source ../chasis_homework
 For local development, install the wheel from the repository root:
 
 ```bash
-python -m pip install "vendor/microservice_chassis-0.8.0-py3-none-any.whl[auth,events,database]"
+python -m pip install "vendor/microservice_chassis-0.9.0-py3-none-any.whl[auth,events,database]"
 ```
 
+**Resource snapshots (0.9.0).** The seven Python services include `resources` in
+health responses: UTC sample time, system CPU percentage, memory total/available
+bytes and usage percentage, and disk total/free bytes and usage percentage.
+`ResourceMonitor` takes a sample at startup and every five seconds in a worker
+thread. Endpoints only read the saved snapshot and return 503 if it is absent or
+older than fifteen seconds. The optional `resources` extra installs psutil.
+CPU and memory describe what the operating system exposes to that process; in
+Docker these can be host Linux VM values, not container-specific cgroup limits.
+
 **Health check scope.** All seven application services expose unauthenticated
-`GET /service/health`. HTTP 200 with `{"status":"ok","service":"<service-name>"}`
+`GET /service/health`. HTTP 200 with `status`, `service` and the cached `resources` object
 requires healthy dependencies; unknown, failed or expired results return 503.
 The five business APIs use the chassis `HealthMonitor` to probe SQL, the JWT public
 key and background tasks, and read the live connections/channels of their RabbitMQ

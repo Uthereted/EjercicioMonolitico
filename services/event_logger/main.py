@@ -1,5 +1,5 @@
 from my_chassis.discovery import registered_service
-from my_chassis.health import HealthMonitor, mongodb_ready
+from my_chassis.health import HealthMonitor, ResourceMonitor, mongodb_ready
 """Dedicated, idempotent MongoDB archive of business facts and saga messages."""
 import asyncio
 import logging
@@ -25,6 +25,8 @@ def audit_connected():
     return (audit_link is not None and not audit_link[0].is_closed
             and not audit_link[1].is_closed)
 
+
+resource_monitor = ResourceMonitor()
 
 health_monitor = HealthMonitor({
     'mongodb': lambda: mongodb_ready(app.state.mongo),
@@ -141,7 +143,7 @@ async def lifespan(app):
                                  connectTimeoutMS=5000)
     app.state.worker = asyncio.create_task(run(app.state.mongo))
     try:
-        async with health_monitor.lifespan(), registered_service("event-logger"):
+        async with health_monitor.lifespan(), resource_monitor.lifespan(), registered_service("event-logger"):
             yield
     finally:
         app.state.worker.cancel()
@@ -158,7 +160,7 @@ install_logging(app, 'event-logger')
 async def health():
     if not health_monitor.available:
         raise HTTPException(status_code=503, detail='Audit dependencies unavailable')
-    return {'status': 'ok', 'service': 'event-logger'}
+    return {'status': 'ok', 'service': 'event-logger', 'resources': resource_monitor.snapshot()}
 
 
 if __name__ == '__main__':

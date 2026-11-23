@@ -1,3 +1,4 @@
+from my_chassis.health import ResourceMonitor
 from my_chassis.discovery import registered_service
 """Store application messages from a dedicated exchange; query them as an admin."""
 import asyncio
@@ -30,6 +31,7 @@ logs = db.get_collection('application_logs', write_concern=WriteConcern(w=1, j=T
 keys = db.get_collection('log_auth_keys', write_concern=WriteConcern(w=1, j=True))
 ready = False
 checked_at = 0
+resource_monitor = ResourceMonitor()
 
 
 async def load_public_key():
@@ -160,7 +162,7 @@ async def lifespan(app):
     task = asyncio.create_task(run())
     app.state.worker = task
     try:
-        async with registered_service("log-aggregator"):
+        async with resource_monitor.lifespan(), registered_service("log-aggregator"):
             yield
     finally:
         task.cancel()
@@ -178,7 +180,7 @@ async def health():
     # JWT key availability is checked when authenticating log-query requests.
     if not ready or time.monotonic() - checked_at >= 4 or app.state.worker.done():
         raise HTTPException(503, 'Log storage or broker unavailable')
-    return {'status': 'ok', 'service': 'log-aggregator'}
+    return {'status': 'ok', 'service': 'log-aggregator', 'resources': resource_monitor.snapshot()}
 
 
 @app.get('/logs', dependencies=[Depends(require_admin)])

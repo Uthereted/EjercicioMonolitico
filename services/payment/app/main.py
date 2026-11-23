@@ -1,5 +1,5 @@
 from my_chassis.database import database_ready
-from my_chassis.health import HealthMonitor
+from my_chassis.health import HealthMonitor, ResourceMonitor
 from my_chassis.discovery import registered_service, get_service_url
 import asyncio
 from contextlib import asynccontextmanager, suppress
@@ -10,6 +10,8 @@ from app import messaging, events, saga
 from app.auth_verifier import fetch_public_key
 from app.routers import payment_router, payment_queries
 from app.sql import database
+
+resource_monitor = ResourceMonitor()
 
 health_monitor = HealthMonitor({
     'database': lambda: database_ready(database.engine),
@@ -30,7 +32,7 @@ async def lifespan(app):
              asyncio.create_task(events.consume_events("payment.saga", saga.handle_event, topics=saga.TOPICS))]
     app.state.tasks = tasks
     try:
-        async with health_monitor.lifespan(), registered_service("payment-service"):
+        async with health_monitor.lifespan(), resource_monitor.lifespan(), registered_service("payment-service"):
             yield
     finally:
         for task in tasks:
@@ -42,8 +44,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Payment Service", docs_url="/payment", redoc_url=None, lifespan=lifespan)
-app.include_router(create_health_router("payment-service", is_ready=lambda: health_monitor.available))
-app.include_router(create_health_router("payment-service", is_ready=lambda: health_monitor.available), prefix="/service")
+app.include_router(create_health_router("payment-service", is_ready=lambda: health_monitor.available, resources=resource_monitor.snapshot))
+app.include_router(create_health_router("payment-service", is_ready=lambda: health_monitor.available, resources=resource_monitor.snapshot), prefix="/service")
 app.include_router(payment_router.router)
 app.include_router(payment_queries.router)
 install_logging(app, 'payments')

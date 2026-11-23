@@ -37,6 +37,13 @@ class TLSChecks(unittest.TestCase):
             with self.subTest(url=url):
                 response = self.http.get(url)
                 self.assertEqual(response.status_code, 200)
+                if url.endswith('/service/health'):
+                    resources = response.json()['resources']
+                    self.assertIn('sampled_at', resources)
+                    self.assertGreaterEqual(resources['cpu_percent'], 0)
+                    self.assertLessEqual(resources['cpu_percent'], 100)
+                    self.assertIn('memory', resources)
+                    self.assertIn('disk', resources)
                 stream = response.extensions['network_stream']
                 self.assertIsNotNone(stream.get_extra_info('ssl_object'))
 
