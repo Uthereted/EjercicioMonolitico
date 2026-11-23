@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 RUN pip install --no-cache-dir --upgrade pip;
 WORKDIR /build
 COPY services/payment/requirements.txt ./requirements.txt
-COPY vendor/microservice_chassis-0.5.0-py3-none-any.whl /wheels/microservice_chassis-0.5.0-py3-none-any.whl
-RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.5.0-py3-none-any.whl && \
+COPY vendor/microservice_chassis-0.6.1-py3-none-any.whl /wheels/microservice_chassis-0.6.1-py3-none-any.whl
+RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.6.1-py3-none-any.whl && \
     pip install --no-cache-dir -r requirements.txt
 
 # We will be working on this folder
@@ -30,7 +30,6 @@ USER 1000
 
 # Copy the app to the container
 COPY services/payment/app /home/pyuser/code/app
-COPY service_discovery.py ./service_discovery.py
 COPY service_logging /home/pyuser/code/service_logging
 
 # Run the application

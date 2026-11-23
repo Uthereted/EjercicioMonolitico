@@ -1,4 +1,4 @@
-from service_discovery import registered_service
+from my_chassis.discovery import registered_service
 """Store application messages from a dedicated exchange; query them as an admin."""
 import asyncio
 from contextlib import asynccontextmanager, suppress

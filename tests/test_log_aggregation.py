@@ -1,8 +1,10 @@
 """Offline log storage and failure-gate contracts; no Docker services required."""
 import importlib.util
+import asyncio
 import json
 from pathlib import Path
 import sys
+import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,6 +20,37 @@ with patch('pymongo.MongoClient'):
 
 
 class LogAggregationTests(unittest.IsolatedAsyncioTestCase):
+    def cached_runtime(self):
+        instance = LogRuntime()
+        instance.lock = asyncio.Lock()
+        instance.ready = True
+        instance.checked_at = time.monotonic()
+        instance.connection = MagicMock(is_closed=False)
+        instance.channel = MagicMock(is_closed=False)
+        instance.http = AsyncMock()
+        instance.connect = AsyncMock()
+        instance.flush = AsyncMock()
+        return instance
+
+    async def test_requests_use_cached_health_without_remote_checks(self):
+        instance = self.cached_runtime()
+        checked_at = instance.checked_at
+        await instance.checkpoint('First operation')
+        await instance.checkpoint('Second operation')
+        instance.http.get.assert_not_awaited()
+        instance.connect.assert_not_awaited()
+        self.assertEqual(instance.checked_at, checked_at)
+        self.assertEqual(instance.flush.await_count, 2)
+
+    async def test_expired_cached_health_blocks_operations(self):
+        instance = self.cached_runtime()
+        instance.checked_at -= 5
+        with self.assertRaises(LogUnavailable):
+            await instance.checkpoint('Must not proceed')
+        instance.http.get.assert_not_awaited()
+        instance.connect.assert_not_awaited()
+        instance.flush.assert_not_awaited()
+
     def message(self):
         payload = {'log_id': 'example-id', 'service': 'orders', 'level': 'ERROR',
                    'timestamp': '2026-11-12T10:00:00+00:00', 'message': 'Example failure'}

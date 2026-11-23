@@ -64,7 +64,7 @@ This remains development-grade authentication: registration does not verify emai
 
 ## Microservice chassis
 
-The chassis is the `microservice_chassis` 0.5.0 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
+The chassis is the `microservice_chassis` 0.6.1 library, imported in Python as `my_chassis`. Its independent source repository is [Uthereted/chasis_homework](https://github.com/Uthereted/chasis_homework). It is used by all five services and the event logger, and it holds the infrastructure that the choreography needs everywhere, so each service keeps only its business logic.
 
 | Module | What it provides | Used by |
 | --- | --- | --- |
@@ -72,13 +72,16 @@ The chassis is the `microservice_chassis` 0.5.0 library, imported in Python as `
 | `my_chassis.keys` | Validation of RSA public keys, a loader that reads the key from the service's database, and persistence of keys received as facts | JWT consumers |
 | `my_chassis.events.EventBus` | `event_outbox`, `event_inbox` and signing-key tables bound to the service's own database; atomic recording of facts; confirmed publishing with retries; one-time processing of received facts | The five services |
 | `my_chassis.messaging.TopicTransport` | Broker connection, the topic exchange and the subscription of a service's own queue to its topics | Services and event logger |
+| `my_chassis.discovery` | Consul registration, deregistration and healthy service discovery | All seven Python services |
 | `my_chassis.database` | `create_database` (engine and session factory) and the per-request session dependency | All five service SQLite databases (MongoDB uses its own client) |
-| `service_logging.install_logging` (local shared package) | RabbitMQ application logging and fail-closed operation gates | All six log producers |
+| `my_chassis.observability.install_logging` (project settings in `service_logging`) | RabbitMQ application logging and fail-closed operation gates | All six log producers |
 | `create_health_router` | `GET /service/health` using the `/service` router prefix | All five APIs; orders and payments also retain `/health` |
 
 Each service's `app/events.py` only binds the shared `EventBus` to its own database and configuration, and each JWT module supplies its issuer, audience and key loader. Business models, event contracts, permissions, payment decisions, workflow rules and refresh sessions stay in the services.
 
-**Distribution.** The repository ships a tested wheel, `vendor/microservice_chassis-0.5.0-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database]==0.5.0`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
+**Version 0.6.1 validation:** tests are pending manual execution; see `vendor/README.md`.
+
+**Distribution.** The repository ships a versioned wheel, `vendor/microservice_chassis-0.6.1-py3-none-any.whl`, and every service pins `microservice_chassis[auth,events,database,observability]==0.6.1`. Docker installs that exact file first, so the stack starts without network access to GitHub or a mutable branch. `tools/build_chassis.py` rebuilds the wheel from a local checkout of the chassis repository:
 
 ```bash
 python tools/build_chassis.py --source ../chasis_homework
@@ -87,7 +90,7 @@ python tools/build_chassis.py --source ../chasis_homework
 For local development, install the wheel from the repository root:
 
 ```bash
-python -m pip install "vendor/microservice_chassis-0.5.0-py3-none-any.whl[auth,events,database]"
+python -m pip install "vendor/microservice_chassis-0.6.1-py3-none-any.whl[auth,events,database]"
 ```
 
 **Health check scope.** All seven application services expose unauthenticated `GET /service/health`, returning HTTP 200 and `{"status":"ok","service":"<service-name>"}` when available. Producers return 503 if the logging pipeline is unavailable; their health handlers read cached state without doing I/O. The aggregator monitors RabbitMQ connectivity and MongoDB read/write availability in the background. The event logger also returns 503 if its audit task has stopped. Orders and payments retain their previous `/health` endpoints, and delivery retains `/deliveries/`. The gateway `/health` continues to report only gateway liveness.

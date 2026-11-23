@@ -12,5 +12,5 @@ source = args.source.resolve()
 if not (source / 'setup.py').is_file():
     parser.error('Source must be the chassis repository directory')
 (root / 'vendor').mkdir(exist_ok=True)
-subprocess.run([sys.executable, '-m', 'pip', 'wheel', '--no-deps', '--no-index',
+subprocess.run([sys.executable, '-m', 'pip', 'wheel', '--no-deps', '--no-index', '--no-cache-dir',
                 '--no-build-isolation', '--wheel-dir', str(root / 'vendor'), str(source)], check=True)

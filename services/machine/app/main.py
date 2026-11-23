@@ -1,4 +1,4 @@
-from service_discovery import registered_service
+from my_chassis.discovery import registered_service
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Depends

@@ -9,4 +9,4 @@ aio-pika~=9.4
 PyJWT[crypto]~=2.9
 bcrypt~=4.1
 cryptography~=42.0
-microservice_chassis[auth,events,database]==0.5.0
+microservice_chassis[auth,events,database,observability]==0.6.1

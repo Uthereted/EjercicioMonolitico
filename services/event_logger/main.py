@@ -1,4 +1,4 @@
-from service_discovery import registered_service
+from my_chassis.discovery import registered_service
 """Dedicated, idempotent MongoDB archive of business facts and saga messages."""
 import asyncio
 import logging
