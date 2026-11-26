@@ -1,5 +1,5 @@
-from my_chassis.auth import get_bearer_token
 """Order creation command; query handlers are in order_queries.py."""
+from my_chassis.auth import get_bearer_token
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db

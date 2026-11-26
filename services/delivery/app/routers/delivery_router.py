@@ -50,7 +50,7 @@ async def get_single_delivery(
 
     if delivery is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=404,
             detail=f"Delivery {delivery_id} not found",
         )
 

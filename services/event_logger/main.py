@@ -1,17 +1,17 @@
+"""Dedicated, idempotent MongoDB archive of business facts and saga messages."""
 from my_chassis.discovery import registered_service
 from my_chassis.health import HealthMonitor, ResourceMonitor, mongodb_ready
-"""Dedicated, idempotent MongoDB archive of business facts and saga messages."""
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from pymongo import MongoClient
 from pymongo.write_concern import WriteConcern
 from service_logging import install_logging, runtime
-from my_chassis.events import decode_event
+from my_chassis.events import decode_event, stop_tasks
 from my_chassis.messaging import TopicTransport
 
 logger = logging.getLogger(__name__)
@@ -146,9 +146,7 @@ async def lifespan(app):
         async with health_monitor.lifespan(), resource_monitor.lifespan(), registered_service("event-logger"):
             yield
     finally:
-        app.state.worker.cancel()
-        with suppress(asyncio.CancelledError):
-            await app.state.worker
+        await stop_tasks([app.state.worker])
 
 
 app = FastAPI(title="Event Logger Health", lifespan=lifespan,

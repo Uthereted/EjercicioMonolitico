@@ -48,12 +48,17 @@ async def handle_event(db, event_type, payload):
     if event_type not in TOPICS:
         raise ValueError("Unsupported order saga response")
     payment = event_type.startswith("saga.payment.")
-    result = (SagaPaymentResult if payment else SagaDeliveryResult).model_validate(payload)
+    if payment:
+        result = SagaPaymentResult.model_validate(payload)
+    else:
+        result = SagaDeliveryResult.model_validate(payload)
     saga = await db.get(models.OrderSaga, result.saga_id)
     if saga is None or saga.order_id != result.order_id:
         raise ValueError("Unknown order saga")
     order = await db.get(models.Order, saga.order_id)
-    if order.client_id != result.client_id or payment and order.total_price != result.amount:
+    if order.client_id != result.client_id:
+        raise ValueError("Saga response does not match order")
+    if payment and order.total_price != result.amount:
         raise ValueError("Saga response does not match order")
     if result.accepted != (not event_type.endswith("rejected")):
         raise ValueError("Saga outcome does not match response")

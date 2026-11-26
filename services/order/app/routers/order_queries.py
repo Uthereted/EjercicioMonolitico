@@ -26,7 +26,9 @@ async def get_order_list(db: AsyncSession = Depends(get_db), token_payload: dict
     if "admin" in token_payload.get("roles", []):
         return await crud.get_order_list(db)
     client_id = token_payload.get("client_id")
-    return await crud.get_order_list(db, client_id=client_id) if client_id is not None else []
+    if client_id is None:
+        return []
+    return await crud.get_order_list(db, client_id=client_id)
 
 
 @router.get("/order/{order_id}", response_model=schemas.Order, tags=["Order"])

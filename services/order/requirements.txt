@@ -8,4 +8,4 @@ pymongo~=4.10
 
 aio-pika~=9.4
 PyJWT[crypto]~=2.9
-microservice_chassis[auth,events,database,observability,discovery,resources]==0.10.0
+microservice_chassis[auth,events,database,observability,discovery,resources]==0.10.1

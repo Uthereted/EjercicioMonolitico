@@ -22,4 +22,7 @@ async def get_balance(
     """Retrieve a client's current balance."""
     check_client_ownership(client_id, token_payload)
     account = await crud.get_account_by_client_id(db, client_id)
-    return schemas.BalanceResponse(client_id=client_id, balance=account.balance if account is not None else 0)
+    balance = 0
+    if account is not None:
+        balance = account.balance
+    return schemas.BalanceResponse(client_id=client_id, balance=balance)

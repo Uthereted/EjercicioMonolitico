@@ -10,6 +10,9 @@ async def get_client_profiles(db: AsyncSession, *, client_id=None):
     if client_id is not None:
         query = query.where(models.Client.id == client_id)
     rows = (await db.execute(query)).all()
-    return [schemas.ClientResponse(
-        **schemas.ClientResponse.model_validate(client).model_dump(exclude={'username'}), username=username,
-    ) for client, username in rows]
+    profiles = []
+    for client, username in rows:
+        profile = schemas.ClientResponse.model_validate(client)
+        profile.username = username
+        profiles.append(profile)
+    return profiles

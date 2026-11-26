@@ -1,10 +1,10 @@
 # Chasis compartido
 
-`microservice_chassis-0.10.0-py3-none-any.whl` es la distribución de
+`microservice_chassis-0.10.1-py3-none-any.whl` es la distribución de
 `chasis_homework` utilizada por los siete servicios Python. No requiere un
 checkout hermano ni descargar una rama mutable para arrancar con Docker.
 
-SHA-256: `46348429da984b18c0e98652af58ae132d9d934ccac3a84e450fd9dea3136c7c`
+SHA-256: `7da5149103dc28ce5962cf2cb1cc64588c0485c6baab6baa5a37f1d6af6d00ee`
 
 El chasis incluye los siguientes módulos reutilizables:
 
@@ -23,7 +23,7 @@ El chasis incluye los siguientes módulos reutilizables:
 `service_logging` conserva únicamente la configuración propia de este proyecto:
 el exchange `manufacturing.logs` y las rutas de salud que ya existían.
 
-La wheel 0.5.0 anterior se conserva; los Dockerfile y requisitos utilizan 0.10.0.
+La wheel 0.5.0 anterior se conserva; los Dockerfile y requisitos utilizan 0.10.1.
 El monitor actualiza la salud aproximadamente cada segundo. Las llamadas normales
 usan ese estado guardado; no consultan de nuevo Consul ni el health check del
 colector. Si falla o tiene más de cuatro segundos, se bloquea la operación.
@@ -74,7 +74,7 @@ en todos los Dockerfile antes de reconstruir las imágenes.
 Los monitores son internos; el endpoint no ejecuta consultas SQL, pings MongoDB
 ni solicitudes HTTP. No se han ejecutado las pruebas de esta versión.
 
-## CQRS con Consul (0.10.0)
+## CQRS con Consul (0.10.1)
 
 Las lecturas están separadas en `client_queries.py`, `order_queries.py` y
 `payment_queries.py`. Devuelven los modelos de lectura con las mismas rutas y
@@ -92,7 +92,7 @@ se devuelve 503 sin guardar el pedido ni efectuar el depósito. Los monitores de
 pedidos y pagos también comprueban en segundo plano la disponibilidad registrada
 del servicio de consultas de clientes. No se han ejecutado las pruebas.
 
-## Recursos del health check (0.10.0)
+## Recursos del health check (0.10.1)
 
 Los siete servicios Python devuelven `resources` en `/service/health`:
 
@@ -121,7 +121,7 @@ Los casos de caché y caducidad de recursos están en `tests/test_health_checks.
 `tests/test_tls.py` comprueba también su presencia en los siete servicios.
 Las pruebas no se han ejecutado.
 
-## Respuesta de Saga indicada en el comando (0.10.0)
+## Respuesta de Saga indicada en el comando (0.10.1)
 
 Pedidos incluye `response_exchange: "manufacturing.saga.responses"` en cada
 comando de reserva, creación, confirmación y compensación. Pagos y entregas
@@ -141,3 +141,18 @@ Al crear un pedido, los comandos archivados por Event Logger deben incluir
 `data.response_exchange` y las respuestas conservar el mismo valor. Comprueba
 tanto un pedido aceptado como uno rechazado que active la compensación.
 `tests/test_saga_routing.py` contiene casos del enrutador para ejecución manual.
+
+## Simplificación general (0.10.1)
+
+El cierre de tareas de los servicios y la máquina utiliza `stop_tasks` del
+chasis. Se elimina la duplicación manteniendo la cancelación y espera originales.
+Los depósitos crean la cuenta si falta y guardan saldo y transacción juntos,
+sin funciones intermedias ni un commit previo para crear la cuenta.
+Pedidos y pagos reutilizan su router de salud para las rutas existentes.
+La consulta de una entrega inexistente devuelve 404.
+
+Se conservan JWT y permisos, TLS con validación, Saga y compensaciones,
+historial y consultas, logs con campos adicionales, monitores de salud en
+segundo plano y descubrimiento con Consul. También se conservan los esquemas
+y migraciones que permiten abrir las bases existentes. No se han ejecutado
+pruebas ni contenedores; la revisión ha sido estática.

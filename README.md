@@ -91,7 +91,7 @@ The previous database locations were archived under
 `.backups/service-layout-2026-11-05/` during reorganization. That local folder is
 excluded from Git and Docker builds. No existing database records were removed.
 
-## Shared chassis 0.10.0
+## Shared chassis 0.10.1
 
 The seven Python health endpoints also return cached CPU, memory and disk
 resources. Samples refresh every five seconds; requests do not collect metrics.
@@ -102,14 +102,14 @@ public key and logging for business APIs; MongoDB and consumers for audit.
 Unknown, failed or expired checks return 503. Gateway health also requires all
 seven backends to be available. Manual commands are in `vendor/README.md`.
 
-Version 0.10.0 includes authenticated read-only service queries through Consul,
+Version 0.10.1 includes authenticated read-only service queries through Consul,
 separate query handlers, Consul registration/discovery and structured RabbitMQ
 logging with its middleware. `service_logging` only supplies this project's
 settings. Health probes run in the background; requests use their cached result
 without repeating remote health checks. This version awaits manual tests; commands are in `vendor/README.md`.
 
 The independent source repository is [chasis_homework](https://github.com/Uthereted/chasis_homework).
-This project includes its 0.10.0 wheel in `vendor/`; Docker installs that
+This project includes its 0.10.1 wheel in `vendor/`; Docker installs that
 exact artifact for all five APIs and the audit worker. A sibling checkout and
 access to a mutable Git branch are not needed to start the stack.
 
@@ -197,7 +197,7 @@ the preceding Dockerfile instructions do not change. Changing only the code
 does not require reinstalling the dependencies. Avoiding `--no-cache` and
 keeping the Docker cache lets you take advantage of this reuse.
 
-All consumers pin `microservice_chassis[auth,events,database,observability]==0.10.0` (the audit
+All consumers pin `microservice_chassis[auth,events,database,observability]==0.10.1` (the audit
 worker uses the events extra). Docker installs the local wheel first, then the
 remaining requirements. All Dockerfiles now use the repository root as context.
 On another PC, clone this repository, copy `dot_env_example` to `.env` and run
@@ -205,7 +205,7 @@ On another PC, clone this repository, copy `dot_env_example` to `.env` and run
 For local Python development, first install the shared package from the root:
 
 ```powershell
-python -m pip install "vendor/microservice_chassis-0.10.0-py3-none-any.whl[auth,events,database]"
+python -m pip install "vendor/microservice_chassis-0.10.1-py3-none-any.whl[auth,events,database]"
 python -m pip install -r services/order/requirements.txt
 ```
 
@@ -778,7 +778,7 @@ This project is for development and teaching purposes only:
 - Registration does not verify email ownership, and RabbitMQ and the databases
   are not hardened.
 
-### Saga response routing (0.10.0)
+### Saga response routing (0.10.1)
 
 Facts, commands and replies use separate exchanges: `manufacturing.events`,
 `manufacturing.commands` and `manufacturing.saga.responses`. Every new Saga

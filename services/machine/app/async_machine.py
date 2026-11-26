@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import os
-from contextlib import suppress
+from my_chassis.events import stop_tasks
 from random import randint
 from sqlalchemy import select
 from service_logging import runtime
@@ -26,11 +26,7 @@ class Machine:
         return machine
 
     async def close(self):
-        for task in self.tasks:
-            task.cancel()
-        for task in self.tasks:
-            with suppress(asyncio.CancelledError):
-                await task
+        await stop_tasks(self.tasks)
 
     async def manufacture_one(self):
         await runtime.wait_available()

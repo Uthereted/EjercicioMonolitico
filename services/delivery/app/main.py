@@ -2,7 +2,8 @@ from my_chassis.database import database_ready
 from my_chassis.health import HealthMonitor, ResourceMonitor
 from my_chassis.discovery import registered_service
 import asyncio
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
+from my_chassis.events import stop_tasks
 from fastapi import FastAPI
 from my_chassis import create_health_router
 from service_logging import install_logging, runtime
@@ -35,11 +36,7 @@ async def lifespan(app):
         async with health_monitor.lifespan(), resource_monitor.lifespan(), registered_service("delivery-service"):
             yield
     finally:
-        for task in tasks:
-            task.cancel()
-        for task in tasks:
-            with suppress(asyncio.CancelledError):
-                await task
+        await stop_tasks(tasks)
         await database.engine.dispose()
 
 

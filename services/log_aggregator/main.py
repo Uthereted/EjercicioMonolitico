@@ -1,8 +1,8 @@
+"""Store application messages from a dedicated exchange; query them as an admin."""
 from my_chassis.health import ResourceMonitor
 from my_chassis.discovery import registered_service
-"""Store application messages from a dedicated exchange; query them as an admin."""
 import asyncio
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import json
 import logging
@@ -13,7 +13,7 @@ from typing import Literal
 import aio_pika
 from fastapi import Depends, FastAPI, HTTPException, Query
 from my_chassis.auth import JWTVerifier
-from my_chassis.events import decode_event
+from my_chassis.events import decode_event, stop_tasks
 from my_chassis.keys import validate_public_key
 from pymongo import MongoClient, DESCENDING
 from pymongo.write_concern import WriteConcern
@@ -165,9 +165,7 @@ async def lifespan(app):
         async with resource_monitor.lifespan(), registered_service("log-aggregator"):
             yield
     finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        await stop_tasks([task])
         mongo.close()
 
 

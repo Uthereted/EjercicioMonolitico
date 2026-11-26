@@ -2,7 +2,8 @@ from my_chassis.database import database_ready
 from my_chassis.health import HealthMonitor, ResourceMonitor
 from my_chassis.discovery import registered_service, get_service_url
 import asyncio
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
+from my_chassis.events import stop_tasks
 from fastapi import FastAPI
 from my_chassis import create_health_router
 from service_logging import install_logging, runtime
@@ -35,17 +36,17 @@ async def lifespan(app):
         async with health_monitor.lifespan(), resource_monitor.lifespan(), registered_service("payment-service"):
             yield
     finally:
-        for task in tasks:
-            task.cancel()
-        for task in tasks:
-            with suppress(asyncio.CancelledError):
-                await task
+        await stop_tasks(tasks)
         await database.engine.dispose()
 
 
 app = FastAPI(title="Payment Service", docs_url="/payment", redoc_url=None, lifespan=lifespan)
-app.include_router(create_health_router("payment-service", is_ready=lambda: health_monitor.available, resources=resource_monitor.snapshot))
-app.include_router(create_health_router("payment-service", is_ready=lambda: health_monitor.available, resources=resource_monitor.snapshot), prefix="/service")
+health_router = create_health_router(
+    "payment-service", is_ready=lambda: health_monitor.available,
+    resources=resource_monitor.snapshot,
+)
+app.include_router(health_router)
+app.include_router(health_router, prefix="/service")
 app.include_router(payment_router.router)
 app.include_router(payment_queries.router)
 install_logging(app, 'payments')

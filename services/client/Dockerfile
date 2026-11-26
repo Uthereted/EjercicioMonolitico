@@ -6,8 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /home/pyuser/code
 
 COPY services/client/requirements.txt .
-COPY vendor/microservice_chassis-0.10.0-py3-none-any.whl /wheels/microservice_chassis-0.10.0-py3-none-any.whl
-RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.10.0-py3-none-any.whl && \
+COPY vendor/microservice_chassis-0.10.1-py3-none-any.whl /wheels/microservice_chassis-0.10.1-py3-none-any.whl
+RUN pip install --no-cache-dir --no-deps /wheels/microservice_chassis-0.10.1-py3-none-any.whl && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY services/client/entrypoint.sh .

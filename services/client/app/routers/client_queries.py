@@ -28,4 +28,6 @@ async def read_clients(db: AsyncSession = Depends(get_db), token_payload: dict =
     if token_payload.get("service_name") is not None:
         raise HTTPException(403, "Services cannot list clients")
     client_id = token_payload.get("client_id")
-    return await queries.get_client_profiles(db, client_id=client_id) if client_id is not None else []
+    if client_id is None:
+        return []
+    return await queries.get_client_profiles(db, client_id=client_id)

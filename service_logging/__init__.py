@@ -1,6 +1,6 @@
 """Manufacturing-specific settings for the chassis logging infrastructure."""
 from my_chassis.observability import (
-    LogRuntime, LogUnavailable, RabbitLogHandler, LoggedEventBus, UNAVAILABLE, runtime,
+    LogRuntime, LogUnavailable, LoggedEventBus, runtime,
     install_logging as _install_logging,
 )
 
