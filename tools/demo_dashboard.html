@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Manufacturing Control — Microservices</title>
+<style>
+  :root {
+    --paper: #f4f2ec;
+    --surface: #ffffff;
+    --surface-sub: #faf9f6;
+    --ink: #16181a;
+    --ink-2: #4b525c;
+    --ink-3: #767e89;
+    --rule: #d8d4ca;
+    --rule-strong: #16181a;
+    --teal: #006b76;
+    --teal-tint: #eaf4f5;
+    --ok: #1b6b3a;
+    --ok-tint: #edf7f0;
+    --warn: #9a5204;
+    --warn-tint: #fdf5e7;
+    --err: #a8201a;
+    --err-tint: #fbeeed;
+    --sans: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Cascadia Mono", Consolas, ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Top bar — architectural masthead */
+  .topbar {
+    background: var(--surface);
+    border-top: 4px solid var(--teal);
+    border-bottom: 1px solid var(--rule);
+  }
+  .topbar-inner {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 14px 24px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .brand-code {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--teal);
+    text-transform: uppercase;
+  }
+  .brand h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .ext-links {
+    display: inline-flex;
+    border: 1px solid var(--rule);
+    background: var(--surface-sub);
+  }
+  .ext-links a {
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    text-decoration: none;
+    border-right: 1px solid var(--rule);
+  }
+  .ext-links a:last-child { border-right: none; }
+  .ext-links a:hover { background: var(--ink); color: #fff; }
+
+  /* Tabs bar */
+  .nav-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav-inner {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .tab {
+    appearance: none;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 12px 16px 10px;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tab .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active {
+    color: var(--teal);
+    border-bottom-color: var(--teal);
+  }
+  .tab.active .num { color: var(--teal); }
+
+  /* Main container */
+  .wrap {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 22px 24px 48px;
+  }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Sections */
+  .sheet {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    margin-bottom: 18px;
+  }
+  .sheet-head {
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface-sub);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .sheet-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+  }
+  .sheet-head .route {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--ink-3);
+    margin-left: 8px;
+  }
+  .sheet-body { padding: 16px 18px; }
+  .sheet-body.flush { padding: 0; }
+
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .mono { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .muted { color: var(--ink-3); font-size: 12px; }
+
+  /* Buttons — tactile flat engineering switches */
+  .btn {
+    appearance: none;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 2px;
+    border: 1px solid var(--rule-strong);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .btn:hover:not(:disabled) { background: var(--ink); color: #fff; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn.primary {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+  }
+  .btn.primary:hover:not(:disabled) { background: #00535c; border-color: #00535c; }
+
+  .btn.ok { border-color: var(--ok); color: var(--ok); background: var(--ok-tint); }
+  .btn.ok:hover:not(:disabled) { background: var(--ok); color: #fff; }
+
+  .btn.warn { border-color: var(--warn); color: var(--warn); background: var(--warn-tint); }
+  .btn.warn:hover:not(:disabled) { background: var(--warn); color: #fff; }
+
+  .btn.err { border-color: var(--err); color: var(--err); background: var(--err-tint); }
+  .btn.err:hover:not(:disabled) { background: var(--err); color: #fff; }
+
+  .btn.subtle { border-color: var(--rule); color: var(--ink-2); background: var(--surface); }
+  .btn.subtle:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); background: var(--surface-sub); }
+  .btn.subtle.on { border-color: var(--teal); color: var(--teal); background: var(--teal-tint); }
+
+  select {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    padding: 6px 9px;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  /* Inline status markers (no glowing bubbles) */
+  .stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 2px 7px;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
+    background: var(--surface-sub);
+    color: var(--ink-2);
+  }
+  .stat::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+    display: inline-block;
+  }
+  .stat.ok { color: var(--ok); border-color: #b7dec3; background: var(--ok-tint); }
+  .stat.warn { color: var(--warn); border-color: #edd0a3; background: var(--warn-tint); }
+  .stat.bad { color: var(--err); border-color: #ecc0bd; background: var(--err-tint); }
+  .stat.info { color: var(--teal); border-color: #b2d7db; background: var(--teal-tint); }
+  .stat.plain::before { display: none; }
+
+  /* Tables — crisp ledger lines */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td {
+    text-align: left;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    background: var(--surface-sub);
+  }
+  tbody tr.click { cursor: pointer; }
+  tbody tr.click:hover { background: var(--teal-tint); }
+
+  /* Saga metadata bar */
+  .meta-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    border: 1px solid var(--rule);
+    background: var(--surface-sub);
+    margin-bottom: 16px;
+  }
+  .meta-cell {
+    padding: 10px 13px;
+    border-right: 1px solid var(--rule);
+  }
+  .meta-cell:last-child { border-right: none; }
+  .meta-k {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    margin-bottom: 3px;
+  }
+  .meta-v { font-weight: 700; font-size: 13.5px; }
+
+  /* Saga state-machine rail */
+  .rail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0;
+    margin: 14px 0 18px;
+  }
+  .rail-item {
+    display: flex;
+    align-items: center;
+  }
+  .node {
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--ink-3);
+    background: var(--surface);
+    padding: 9px 13px;
+    min-width: 165px;
+  }
+  .node.ok { border-top-color: var(--ok); background: var(--ok-tint); }
+  .node.warn { border-top-color: var(--warn); background: var(--warn-tint); }
+  .node.bad { border-top-color: var(--err); background: var(--err-tint); }
+  .node-seq { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  .node-state { font-weight: 700; font-size: 13px; margin: 2px 0; }
+  .node-time { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+  .connector {
+    width: 24px;
+    height: 1px;
+    background: var(--ink-3);
+    position: relative;
+  }
+  .connector::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: -3px;
+    border-top: 3.5px solid transparent;
+    border-bottom: 3.5px solid transparent;
+    border-left: 5px solid var(--ink-3);
+  }
+
+  /* Callout banner */
+  .banner {
+    padding: 9px 13px;
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--teal);
+    background: var(--surface-sub);
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .banner.ok { border-left-color: var(--ok); background: var(--ok-tint); }
+  .banner.bad { border-left-color: var(--err); background: var(--err-tint); color: var(--err); }
+
+  /* Subtle horizontal bar inside table cell */
+  .mini-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mini-track {
+    width: 48px;
+    height: 5px;
+    background: #e5e2d9;
+    overflow: hidden;
+  }
+  .mini-fill { height: 100%; background: var(--teal); }
+  .mini-fill.high { background: var(--warn); }
+  .mini-fill.crit { background: var(--err); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-code">ASA // LAB</span>
+        <h1>Manufacturing Microservices</h1>
+      </div>
+      <div class="toolbar">
+        <span id="gw-stat" class="stat info">GATEWAY ...</span>
+        <button id="auto-btn" class="btn subtle on" onclick="toggleAuto()">Polling: 2s</button>
+        <div class="ext-links">
+          <a href="https://localhost:8500" target="_blank" rel="noopener">Consul</a>
+          <a href="https://localhost:8404" target="_blank" rel="noopener">HAProxy</a>
+          <a href="https://localhost:15672" target="_blank" rel="noopener">RabbitMQ</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="nav-bar">
+    <div class="nav-inner">
+      <button class="tab active" data-t="saga" onclick="tab('saga')"><span class="num">01</span> Saga &amp; History</button>
+      <button class="tab" data-t="obs" onclick="tab('obs')"><span class="num">02</span> Health, Resources &amp; Logs</button>
+      <button class="tab" data-t="consul" onclick="tab('consul')"><span class="num">03</span> Consul &amp; CQRS</button>
+      <button class="tab" data-t="sec" onclick="tab('sec')"><span class="num">04</span> Security &amp; Chassis</button>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <!-- 01. SAGA -->
+    <section id="t-saga" class="panel active">
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2>Order Saga Orchestrator</h2>
+          <div class="row">
+            <button class="btn ok" onclick="runSaga('happy')">Run Approved (01001, bal 100)</button>
+            <button class="btn err" onclick="runSaga('insufficient_funds')">Run No Balance (bal 0)</button>
+            <button class="btn warn" onclick="runSaga('outside_coverage')">Run Out of Zone (28001, bal 100)</button>
+          </div>
+        </div>
+        <div class="sheet-body">
+          <div id="saga-msg"></div>
+          <div id="saga-detail" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;">
+              <div class="muted mono" id="saga-order-title">ORDER</div>
+              <div id="saga-deliver"></div>
+            </div>
+            <div id="saga-meta" class="meta-strip"></div>
+
+            <div class="muted mono" style="text-transform:uppercase;letter-spacing:.06em;">State Transitions — GET /api/orders/{id}/saga/history</div>
+            <div id="saga-timeline" class="rail"></div>
+
+            <div class="table-wrap" style="border:1px solid var(--rule);">
+              <table>
+                <thead><tr><th>Saga Command / Reply</th><th>Producer</th><th>response_exchange</th></tr></thead>
+                <tbody id="saga-msgs"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2>Recent Sagas <span class="route">GET /api/orders/sagas/latest</span></h2>
+          <button class="btn subtle" onclick="loadLatestSagas()">Refresh</button>
+        </div>
+        <div class="sheet-body flush table-wrap">
+          <table>
+            <thead><tr><th>Order</th><th>Saga</th><th>Latest State</th><th>Timestamp (UTC)</th></tr></thead>
+            <tbody id="latest-sagas"><tr><td colspan="4" class="muted">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02. HEALTH & LOGS -->
+    <section id="t-obs" class="panel">
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2>Service Health &amp; Cached Resources <span class="route">GET /service/health</span></h2>
+          <button class="btn primary" onclick="testCache()">Verify Caching (2 Rapid Calls)</button>
+        </div>
+        <div id="cache-wrap" style="display:none;padding:12px 18px 0;"></div>
+        <div class="sheet-body flush table-wrap">
+          <table>
+            <thead><tr><th>Service</th><th>Status</th><th>CPU</th><th>RAM</th><th>Disk</th><th>sampled_at (UTC)</th></tr></thead>
+            <tbody id="health-tbody"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2>Aggregated Application Logs <span class="route">GET /api/logs</span></h2>
+          <div class="row">
+            <select id="log-svc" onchange="loadLogs()">
+              <option value="">All services</option>
+              <option>orders</option><option>payments</option><option>clients</option>
+              <option>machine</option><option>deliveries</option><option>event-logger</option>
+            </select>
+            <select id="log-lvl" onchange="loadLogs()">
+              <option value="">All levels</option>
+              <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option><option>CRITICAL</option>
+            </select>
+            <button class="btn subtle" onclick="loadLogs()">Refresh</button>
+          </div>
+        </div>
+        <div class="sheet-body flush table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Service</th><th>Level</th><th>Message</th><th>Source</th></tr></thead>
+            <tbody id="logs-tbody"><tr><td colspan="5" class="muted">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03. CONSUL & CQRS -->
+    <section id="t-consul" class="panel">
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2>Consul Service Registry <span class="route">https://consul:8501</span></h2>
+          <button class="btn primary" onclick="testCqrs()">Run Direct Consul CQRS Read</button>
+        </div>
+        <div id="cqrs-wrap" style="display:none;padding:12px 18px 0;"></div>
+        <div class="sheet-body flush table-wrap">
+          <table>
+            <thead><tr><th>Service</th><th>Instance ID</th><th>Dynamic Address</th><th>Protocol</th><th>Check</th></tr></thead>
+            <tbody id="consul-tbody"><tr><td colspan="5" class="muted">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04. SECURITY & CHASSIS -->
+    <section id="t-sec" class="panel">
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2>CA-Verified TLS &amp; Authentication Checks</h2>
+          <button class="btn primary" id="sec-btn" onclick="runSecurity()">Run Live Checks</button>
+        </div>
+        <div class="sheet-body flush table-wrap">
+          <table>
+            <thead><tr><th>Verification</th><th>Result</th><th>Observed Detail</th></tr></thead>
+            <tbody id="sec-tbody"><tr><td colspan="3" class="muted">Click "Run Live Checks" to verify TLS, CA validation, closed plaintext ports, and JWT auth.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <div class="sheet-head">
+          <h2 id="chassis-title">Shared Microservice Chassis</h2>
+        </div>
+        <div class="sheet-body flush table-wrap">
+          <table>
+            <thead><tr><th>Module</th><th>Responsibility</th></tr></thead>
+            <tbody id="chassis-tbody"><tr><td colspan="2" class="muted">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<script>
+let auto = true, selectedOrder = null, orderTimer = null;
+
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tshort = s => s ? String(s).replace('T', ' ').slice(0, 19) + 'Z' : '—';
+
+function meter(pct) {
+  if (pct == null) return '<span class="muted">—</span>';
+  const n = Number(pct);
+  const cls = n >= 85 ? 'mini-fill crit' : (n >= 65 ? 'mini-fill high' : 'mini-fill');
+  return `<span class="mini-bar"><span class="mini-track"><span class="${cls}" style="width:${Math.min(100, n)}%"></span></span><span class="mono">${n.toFixed(1)}%</span></span>`;
+}
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+  return d;
+}
+
+function tab(name) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.t === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 't-' + name));
+  if (name === 'saga') loadLatestSagas();
+  if (name === 'obs') loadLogs();
+  if (name === 'sec') loadChassis();
+}
+
+function toggleAuto() {
+  auto = !auto;
+  const b = document.getElementById('auto-btn');
+  b.textContent = auto ? 'Polling: 2s' : 'Polling: Paused';
+  b.classList.toggle('on', auto);
+}
+
+async function refreshStatus() {
+  try {
+    const d = await api('/demo/status');
+    const p = document.getElementById('gw-stat');
+    p.className = d.gateway.ok ? 'stat ok' : 'stat bad';
+    p.textContent = d.gateway.ok ? 'GATEWAY 200' : `GATEWAY ${d.gateway.status_code || 'DOWN'}`;
+
+    document.getElementById('health-tbody').innerHTML = d.services.map(s => {
+      const r = s.resources || {};
+      return `<tr>
+        <td><strong>${esc(s.service)}</strong></td>
+        <td><span class="stat ${s.ok ? 'ok' : 'bad'}">${s.ok ? '200 OK' : (s.status_code || 'DOWN')}</span></td>
+        <td>${meter(r.cpu_percent)}</td>
+        <td>${meter(r.memory && r.memory.used_percent)}</td>
+        <td>${meter(r.disk && r.disk.used_percent)}</td>
+        <td class="mono muted">${esc(tshort(r.sampled_at))}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('consul-tbody').innerHTML = d.consul.map(c => `<tr>
+      <td><strong>${esc(c.name)}</strong></td>
+      <td class="mono muted">${esc(c.id)}</td>
+      <td class="mono">${esc(c.address)}</td>
+      <td><span class="stat info plain">${esc(c.scheme.toUpperCase())}</span></td>
+      <td><span class="stat ${c.status === 'passing' ? 'ok' : 'bad'}">${esc(c.status.toUpperCase())}</span></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">No services registered in Consul</td></tr>';
+  } catch (e) {
+    const p = document.getElementById('gw-stat');
+    p.className = 'stat bad';
+    p.textContent = 'OFFLINE';
+  }
+}
+
+async function runSaga(scenario) {
+  const m = document.getElementById('saga-msg');
+  m.innerHTML = `<div class="banner">Starting scenario <strong>${esc(scenario)}</strong> via HAProxy...</div>`;
+  try {
+    const r = await api('/demo/saga/run', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({scenario}),
+    });
+    m.innerHTML = `<div class="banner ok">Created <strong>Order #${r.order_id}</strong> for Client #${r.client_id} — polling Saga progress.</div>`;
+    inspectOrder(r.order_id, true);
+    loadLatestSagas();
+  } catch (e) {
+    m.innerHTML = `<div class="banner bad">${esc(e.message)}</div>`;
+  }
+}
+
+function inspectOrder(id, poll = false) {
+  selectedOrder = id;
+  document.getElementById('saga-detail').style.display = 'block';
+  if (orderTimer) { clearInterval(orderTimer); orderTimer = null; }
+  loadOrder(id);
+  if (poll) orderTimer = setInterval(() => loadOrder(id, true), 1500);
+}
+
+async function loadOrder(id, autoStop = false) {
+  try {
+    const d = await api(`/demo/saga/order/${id}`);
+    const o = d.order;
+    const cls = (o.status === 'Delivered' || o.status === 'ReadyForDelivery') ? 'ok' : (o.status === 'Suspended' ? 'bad' : 'info');
+    document.getElementById('saga-order-title').textContent = `ORDER #${o.id}  /  CLIENT #${o.client_id}`;
+    document.getElementById('saga-deliver').innerHTML = (o.status === 'ReadyForDelivery' && o.delivery_id)
+      ? `<button class="btn primary" onclick="deliver(${o.delivery_id}, ${o.id})">Mark Delivered</button>` : '';
+
+    document.getElementById('saga-meta').innerHTML = `
+      <div class="meta-cell"><div class="meta-k">Order Status</div><div class="meta-v"><span class="stat ${cls}">${esc(o.status)}</span></div></div>
+      <div class="meta-cell"><div class="meta-k">Client Balance</div><div class="meta-v mono">${d.balance ?? '—'}</div></div>
+      <div class="meta-cell"><div class="meta-k">Delivery</div><div class="meta-v">${d.delivery ? esc(d.delivery.status) : '—'}</div></div>
+      <div class="meta-cell"><div class="meta-k">Destination</div><div class="meta-v">${esc(o.address)}</div></div>`;
+
+    document.getElementById('saga-timeline').innerHTML = d.history.map((h, i) => {
+      const c = h.state === 'Approved' ? 'ok' : (h.state === 'Suspended' ? 'bad' : (h.state.includes('Comp') || h.state.includes('Release') || h.state.includes('Cancel') ? 'warn' : ''));
+      return `<div class="rail-item">${i ? '<div class="connector"></div>' : ''}<div class="node ${c}"><div class="node-seq">STEP 0${h.sequence}</div><div class="node-state">${esc(h.state)}</div><div class="node-time">${esc(tshort(h.timestamp))}</div></div></div>`;
+    }).join('') || '<span class="muted">Waiting for Saga history...</span>';
+
+    document.getElementById('saga-msgs').innerHTML = d.saga_messages.map(x => `<tr>
+      <td class="mono"><strong>${esc(x.event_type)}</strong></td>
+      <td class="mono muted">${esc(x.producer)}</td>
+      <td class="mono"><span class="stat info plain">${esc(x.response_exchange || 'default')}</span></td>
+    </tr>`).join('') || '<tr><td colspan="3" class="muted">Waiting for archived Saga messages...</td></tr>';
+
+    if (autoStop && (o.status === 'Delivered' || o.status === 'Suspended') && d.history.length >= 3 && d.saga_messages.length >= 4) {
+      clearInterval(orderTimer); orderTimer = null; loadLatestSagas();
+    }
+  } catch (e) {}
+}
+
+async function deliver(deliveryId, orderId) {
+  await api(`/demo/deliver/${deliveryId}`, {method: 'POST'});
+  inspectOrder(orderId, true);
+}
+
+async function loadLatestSagas() {
+  try {
+    const r = await api('/demo/sagas/latest');
+    document.getElementById('latest-sagas').innerHTML = r.items.map(x => {
+      const c = x.state === 'Approved' ? 'ok' : (x.state === 'Suspended' ? 'bad' : 'warn');
+      return `<tr class="click" onclick="inspectOrder(${x.order_id})">
+        <td class="mono"><strong>#${x.order_id}</strong></td>
+        <td class="mono">#${x.saga_id}</td>
+        <td><span class="stat ${c}">${esc(x.state)}</span></td>
+        <td class="mono muted">${esc(tshort(x.timestamp))}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="muted">No Sagas recorded yet.</td></tr>';
+  } catch (e) {
+    document.getElementById('latest-sagas').innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function testCache() {
+  const w = document.getElementById('cache-wrap');
+  w.style.display = 'block';
+  try {
+    const r = await api('/demo/health-cache');
+    const [a, b] = r.calls;
+    w.innerHTML = `<div class="banner ${r.same_snapshot ? 'ok' : ''}">
+      <strong>${r.same_snapshot ? 'Cached snapshot confirmed' : '5s refresh boundary crossed — click once more'}</strong> &mdash;
+      <span class="mono">Call 1 (${a.ms}ms): ${esc(a.sampled_at)}</span> &nbsp;/&nbsp;
+      <span class="mono">Call 2 (${b.ms}ms): ${esc(b.sampled_at)}</span>
+    </div>`;
+  } catch (e) {
+    w.innerHTML = `<div class="banner bad">${esc(e.message)}</div>`;
+  }
+}
+
+async function loadLogs() {
+  const qs = new URLSearchParams({limit: 20});
+  const s = document.getElementById('log-svc').value;
+  const l = document.getElementById('log-lvl').value;
+  if (s) qs.set('service', s);
+  if (l) qs.set('level', l);
+  try {
+    const r = await api('/demo/logs?' + qs);
+    document.getElementById('logs-tbody').innerHTML = r.items.map(x => {
+      const c = (x.level === 'ERROR' || x.level === 'CRITICAL') ? 'bad' : (x.level === 'WARNING' ? 'warn' : 'info');
+      const src = x.file ? x.file.split('/').slice(-2).join('/') + ':' + (x.line || '') : '—';
+      return `<tr>
+        <td class="mono muted" style="white-space:nowrap;">${esc(tshort(x.timestamp))}</td>
+        <td class="mono">${esc(x.service)}</td>
+        <td><span class="stat ${c} plain">${esc(x.level)}</span></td>
+        <td>${esc(x.message)}</td>
+        <td class="mono muted">${esc(src)}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="5" class="muted">No matching logs.</td></tr>';
+  } catch (e) {
+    document.getElementById('logs-tbody').innerHTML = `<tr><td colspan="5" class="muted">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function testCqrs() {
+  const w = document.getElementById('cqrs-wrap');
+  w.style.display = 'block';
+  try {
+    const r = await api('/demo/cqrs');
+    w.innerHTML = `<div class="banner ok"><strong>Direct Consul CQRS read succeeded (${r.ms}ms)</strong> &mdash; resolved <span class="mono">${esc(r.discovered_url)}</span> with SNI <span class="mono">${esc(r.sni)}</span> (bypassing HAProxy) &rarr; ${r.count} clients returned.</div>`;
+  } catch (e) {
+    w.innerHTML = `<div class="banner bad">${esc(e.message)}</div>`;
+  }
+}
+
+async function runSecurity() {
+  const b = document.getElementById('sec-btn');
+  b.disabled = true;
+  try {
+    const r = await api('/demo/security');
+    document.getElementById('sec-tbody').innerHTML = r.checks.map(c => `<tr>
+      <td><strong>${esc(c.name)}</strong></td>
+      <td><span class="stat ${c.passed ? 'ok' : 'bad'}">${c.passed ? 'PASS' : 'FAIL'}</span></td>
+      <td class="mono muted">${esc(c.detail)}</td>
+    </tr>`).join('');
+  } catch (e) {
+    document.getElementById('sec-tbody').innerHTML = `<tr><td colspan="3" class="muted">${esc(e.message)}</td></tr>`;
+  } finally {
+    b.disabled = false;
+  }
+}
+
+async function loadChassis() {
+  try {
+    const r = await api('/demo/chassis');
+    document.getElementById('chassis-title').textContent = `Shared Chassis — microservice_chassis v${r.version} (${r.modules.length} modules)`;
+    document.getElementById('chassis-tbody').innerHTML = r.modules.map(m => `<tr>
+      <td class="mono"><strong>${esc(m.name)}</strong></td>
+      <td class="muted">${esc(m.doc)}</td>
+    </tr>`).join('');
+  } catch (e) {}
+}
+
+refreshStatus();
+loadLatestSagas();
+setInterval(() => { if (auto) refreshStatus(); }, 2000);
+</script>
+</body>
+</html>
